@@ -263,11 +263,11 @@ class main_window(ctk.CTkFrame):
 
         # Batch processing
         batch_processing_button=ctk.CTkButton(master=main_buttons_frame, text="Batch Processing", command=lambda: parent.show_frame(batch_processing), height=90, width=160)
-        batch_processing_button.grid(row=0, column=1, sticky='nesw', pady=10, padx=10)
+        batch_processing_button.grid(row=1, column=1, sticky='nesw', pady=10, padx=10)
 
         # single file processing
         process_file_button=ctk.CTkButton(master=main_buttons_frame, text="Process single file", command=lambda: parent.show_frame(process_file_frame), height=90, width=160)
-        process_file_button.grid(row=1, column=1, sticky='nesw', pady=10, padx=10)
+        process_file_button.grid(row=0, column=1, sticky='nesw', pady=10, padx=10)
 
         # Utility/plotting buttons
         util_plot_button_frame=ctk.CTkFrame(master=self)

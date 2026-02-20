@@ -5,7 +5,7 @@ Besides the GUI, the MEA analysis tool can also be called as a python library, a
 Firstly, import the necessary functions:
 
 ```python
-from CureQ.mea import analyse_wells, get_default_parameters
+from MEAlytics.mea import analyse_wells, get_default_parameters
 ```
 
 Next, we define some variables that we later need to pass to the function.
@@ -38,7 +38,7 @@ if __name__ == '__main__':
 In the end, it should look like this:
 
 ```python
-from CureQ.mea import analyse_wells, get_default_parameters
+from MEAlytics.mea import analyse_wells, get_default_parameters
 
 fileadress='C:/mea_data/mea_experiment.h5'
 sampling_rate=20000

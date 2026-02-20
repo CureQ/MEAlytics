@@ -3,7 +3,7 @@ The MEAlytics package contains a wide range of parameters that can be used to al
 The default parameter values are stored as a dictionary in the library, and can be accessed as follows:
 
 ```python
-from CureQ.mea import get_default_parameters
+from MEAlytics.mea import get_default_parameters
 print(get_default_parameters())
 ```
 

@@ -80,7 +80,7 @@ Desktop shortcut created at C:\Users\Desktop\MEAlytics.lnk
 The output should look like this, and a shortcut should appear on your desktop and start menu.
 
 #### From the installer
-When you have installed MEAlytics using the Windows installer, you can open it the same as you would with any application, using the desktop or start menu.
+When you have installed MEAlytics using the [Windows installer](https://github.com/CureQ/MEAlytics/releases), you can open it the same as you would with any application, using the desktop or start menu.
 
 ---
 

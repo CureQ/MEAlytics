@@ -24,7 +24,7 @@ First, press **Select a file** and select the file you want to process. Next, in
 A new window will appear, keeping the user up to date with the progress. The analysis can be cancelled by closing this window. This might not be instant.
 
 ## Axion .raw files
-Axion .raw files can unfortunately not be accessed using python, so they will first have to be converted using MATLAB using our [custom script available on GitHub](https://github.com/CureQ/CureQ/blob/main/raw_to_hdf5.m). For more information, see [Convert Axion data](axion.md).
+Axion .raw files can unfortunately not be accessed using python, so they will first have to be converted using MATLAB using our [custom script available on GitHub](https://github.com/CureQ/MEAlytics/blob/main/raw_to_hdf5.m). For more information, see [Convert Axion data](axion.md).
 
 ## Rechunking
 If your file has not been rechunked/compressed yet, the application will first rechunk the file, creating a rechunked copy, and then process the rechunked file. Files can also be rechunked manually. For more information about why files are rechunked, see [Compress/Rechunk files](compress_rechunk.md).

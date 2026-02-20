@@ -1,7 +1,8 @@
 MEAlytics has two main ways of installation; running MEAlytics as a Python package, or installation using a Windows installer.
 
 # Using a Windows Installer
-Coming soon
+MEAlytics also provides a Windows installer, which provides the simplest way of installing MEAlytics on a Windows machine. Installers for every version can be found in the [releases tab](https://github.com/CureQ/MEAlytics/releases).<br>
+For the installer, the package is bundled into an executable using PyInstaller, and turned into an installer using Inno Setup.
 
 # Installing Python
 A Python interpreter is required to run MEAlytics, the interpreter using the official python installer. All python versions can be found on [https://www.python.org/downloads/](https://www.python.org/downloads/). MEAlytics has been developed and tested on python 3.11, but will most likely also work on other python 3.8+ versions.<br>
@@ -33,7 +34,7 @@ MEAlytics is now successfully installed on your machine and can be executed from
 MEAlytics might receive further updates to enhance the analysis, or fix problems. To check the current version of the library, open the command prompt, and enter:
 ```console
 C:\> MEAlytics --version    
-MEAlytics - Version: 1.2.7
+MEAlytics - Version: 0.1.0
 ```
 
 The most recent available version of the library can be found on the [pypi page](https://pypi.org/project/MEAlytics/). The library can be upgraded using the command:
