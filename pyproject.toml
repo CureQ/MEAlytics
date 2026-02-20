@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MEAlytics"
+version = "0.1.0"
+authors = [
+    { name = "CureQ", email = "cureq-ft@hva.nl" }
+]
+description = "Python tool for processing MEA files."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "GPL-3.0-or-later" }
+keywords = ["MEA", "Microelectrode Array", "electrophysiology", "neuroscience", "analysis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "matplotlib>=3.7.3",
+    "numpy>=1.26.4",
+    "h5py>=3.9.0",
+    "pandas>=2.1.4",
+    "scipy>=1.11.4",
+    "seaborn>=0.12.2",
+    "statsmodels>=0.14.0",
+    "scikit-image>=0.22.0", 
+    "KDEpy>=1.1.9",
+    "customtkinter>=5.2.2",
+    "CTkToolTip>=0.8",
+    "CTkMessagebox>=2.7",
+    "CTkColorPicker>=0.9.0",
+    "requests>=2.32.3",
+    "pyshortcuts>=1.9.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/CureQ/MEAlytics"
+Repository = "https://github.com/CureQ/MEAlytics.git"
+
+[project.scripts]
+mealytics = "MEAlytics.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+MEAlytics = [
+    "GUI/MEAlytics_logo.ico",
+    "GUI/theme.json",
+]

@@ -1,0 +1,99 @@
+site_name: MEAlytics
+site_url: https://cureq.github.io/MEAlytics/
+
+plugins:
+- gen-files:
+    scripts:
+      - gen_ref_pages.py
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: numpy
+          inherited_members: false
+          show_if_no_docstring: true
+        paths: [.]
+
+theme:
+  logo: assets/images/MEAlytics_logo.png
+  favicon: assets/images/MEAlytics_logo.png
+  name: material
+
+  features:
+    - navigation.footer
+    - content.code.copy
+
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Gettings started:
+    - Installation: installation.md
+    - Graphical user interface: gui.md
+    - MEAlytics as Python package: python_package.md
+  - Analysis:
+    - Analyse file: analyse_file.md
+    - Batch processing: batch_processing.md
+    - Output: output.md
+    - Features: features.md
+    - Parameters: parameters.md
+  - Data inspection:
+    - Inspect results: view_results.md
+    - Compare groups: compare_groups.md
+    - Heatmap: heatmap.md
+  - Other:
+    - Processing Axion files: axion.md
+    - Compressing/rechunking files: compress_rechunk.md
+    - Exclude electrodes: exclude_electrodes.md
+    - Supported plates: supported_plates.md
+  - API Reference:
+        - MEA: reference/MEAlytics/mea.md
+        - GUI Module:
+            - Analysis Tool: reference/MEAlytics/GUI/mea_analysis_tool.md
+            - Batch Processing: reference/MEAlytics/GUI/_batch_processing.md
+            - Compress Files: reference/MEAlytics/GUI/_compress_files.md
+            - Exclude Electrodes: reference/MEAlytics/GUI/_exclude_electrodes.md
+            - Heatmap: reference/MEAlytics/GUI/_heatmap.md
+            - Parameters: reference/MEAlytics/GUI/_parameters.md
+            - Plotting: reference/MEAlytics/GUI/_plotting.md
+            - Process File: reference/MEAlytics/GUI/_process_file.md
+            - Single Electrode View: reference/MEAlytics/GUI/_single_electrode_view.md
+            - View Results: reference/MEAlytics/GUI/_view_results.md
+            - Whole Well View: reference/MEAlytics/GUI/_whole_well_view.md
+        - Core Module:
+            - Bandpass: reference\MEAlytics\core\_bandpass.md
+            - Burst Detection: reference/MEAlytics/core/_burst_detection.md
+            - Features: reference/MEAlytics/core/_features.md
+            - Heatmap: reference/MEAlytics/core/_heatmap.md
+            - ISI Distance: reference/MEAlytics/core/_isi_distance.md
+            - Network Burst Detection: reference/MEAlytics/core/_network_burst_detection.md
+            - Plotting: reference/MEAlytics/core/_plotting.md
+            - Spike Distance: reference/MEAlytics/core/_spike_distance.md
+            - Spike Validation: reference/MEAlytics/core/_spike_validation.md
+            - Threshold: reference/MEAlytics/core/_threshold.md
+            - Utilities: reference/MEAlytics/core/_utilities.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      linenums: true
+      use_pygments: true
+  - pymdownx.superfences
+  - pymdownx.extra
+
+watch:
+  - docs
+
+extra_css:
+  - styles/extra.css
