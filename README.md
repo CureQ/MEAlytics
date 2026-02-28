@@ -1,4 +1,4 @@
-#### Please not that this project is still in development.
+#### Please note that this project is still in development.
 
 # MEAlytics
 
