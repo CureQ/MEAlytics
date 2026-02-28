@@ -5,7 +5,7 @@
 MEAlytics is an open-source Python tool for processing Microelectrode Array (MEA) data.<br>
 This repository is maintained by the Amsterdam University of Applied Sciences (AUAS).<br>
 
-## [For more information on functionality and usage, please refer to the documentation](https://cureq.github.io/MEAlytics/)
+#### [For more information on functionality and usage, please refer to the documentation](https://cureq.github.io/MEAlytics/)
 
 ## CureQ
 This tool was created for the CureQ consortium.<br>
@@ -18,8 +18,7 @@ MEAlytics can be downloaded from the Python Package Index (PyPI) using PIP:
 ```shell
 pip install MEAlytics 
 ```
-
-More elaborate installation instructions, inlcuding a 'plug-and-play' installer can be found in the [User Guide](https://cureq.github.io/MEAlytics/installation).<br>
+#### More elaborate installation instructions, inlcuding a 'plug-and-play' installer can be found in the [User Guide](https://cureq.github.io/MEAlytics/installation).<br>
 ---
 
 ## Library usage
