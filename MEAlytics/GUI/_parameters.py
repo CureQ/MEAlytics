@@ -1,376 +1,270 @@
-# Imports
-from tkinter import *
-from tkinter import ttk
-from tkinter import filedialog
 import json
+import os
 import traceback
 
-# External imports
-import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
-from CTkToolTip import *
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QLineEdit, QComboBox, QCheckBox, QPushButton, QFrame,
+    QScrollArea, QGroupBox, QFileDialog, QMessageBox, QSizePolicy
+)
+from PyQt6.QtCore import Qt
 
-class parameter_frame(ctk.CTkFrame):
-    """
-    Allows the user to set the different parameters for the analysis.
-    """
+
+class ParameterFrame(QWidget):
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__()
+        self.parent = parent
+        self.inputs: dict[str, QLineEdit] = {}
 
-        self.parent=parent
-        self.tooltipwraplength=parent.tooltipwraplength
+        self._build_ui()
+        self.load_parameters(self.parent.app_state.parameters)
 
-        # Weights
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(32, 28, 32, 24)
+        root.setSpacing(16)
 
-        """Filter parameters"""
-        # Filter parameters frame
-        filterparameters=ctk.CTkFrame(self)
-        filterparameters.grid(row=0, column=0, padx=10, pady=10, sticky='nesw')
+        header_row = QHBoxLayout()
+        title = QLabel("Analysis Parameters")
+        title.setObjectName("PageTitle")
+        header_row.addWidget(title)
+        header_row.addStretch()
 
-        filterparameters.grid_columnconfigure(0, weight=1)
+        root.addLayout(header_row)
 
-        filterparameters_label=ctk.CTkLabel(filterparameters, text="Filter Parameters", font=ctk.CTkFont(size=25))
-        filterparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=2)
+        subtitle = QLabel(
+            "These parameters control every stage of the analysis pipeline."
+            "Default values should work well for most recordings."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setObjectName("MetaLabel")
+        root.addWidget(subtitle)
 
-        # Low cutoff
-        lowcutofflabel=ctk.CTkLabel(master=filterparameters, text="Low cutoff:")
-        lowcutofflabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        lowcutofftooltip = CTkToolTip(lowcutofflabel, message='Define the low cutoff value for the butterworth bandpass filter. Values should be given in hertz')
-        lowcutoffinput=ctk.CTkEntry(master=filterparameters)
-        lowcutoffinput.grid(row=1, column=1, padx=10, pady=10, sticky='e')
+        divider = QFrame()
+        divider.setObjectName("Divider")
+        divider.setFrameShape(QFrame.Shape.HLine)
+        root.addWidget(divider)
 
-        # High cutoff
-        highcutofflabel=ctk.CTkLabel(master=filterparameters, text="High cutoff:")
-        highcutofflabel.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        highcutofftooltip = CTkToolTip(highcutofflabel, message='Define the high cutoff value for the butterworth bandpass filter. Values should be given in hertz')
-        highcutoffinput=ctk.CTkEntry(master=filterparameters)
-        highcutoffinput.grid(row=2, column=1, padx=10, pady=10, sticky='e')
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
-        # Filter order
-        orderlabel=ctk.CTkLabel(master=filterparameters, text="Filter order:")
-        orderlabel.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        ordertooltip = CTkToolTip(orderlabel, message='The filter order for the butterworth filter')
-        orderinput=ctk.CTkEntry(master=filterparameters)
-        orderinput.grid(row=3, column=1, padx=10, pady=10, sticky='e')
+        container = QWidget()
+        self.grid = QGridLayout(container) 
+        self.grid.setSpacing(16)
+        self.grid.setContentsMargins(0, 4, 8, 4)
 
-        """Spike detection parameters"""
-        # Set up all the spike detection parameters
-        spikedetectionparameters=ctk.CTkFrame(self)
-        spikedetectionparameters.grid(row=0, column=1, padx=10, pady=10, sticky='nsew', rowspan=2)
+        self._populate_grid()
 
-        spikedetectionparameters.grid_columnconfigure(0, weight=1)
-        spikedetectionparameters.grid_rowconfigure(1, weight=1)
-        spikedetectionparameters.grid_rowconfigure(2, weight=1)
+        scroll.setWidget(container)
+        root.addWidget(scroll, 1)
 
-        filterparameters_label=ctk.CTkLabel(spikedetectionparameters, text="Spike Detection Parameters", font=ctk.CTkFont(size=25))
-        filterparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w')
+        bar = QFrame()
+        bar.setObjectName("Card")
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(16, 12, 16, 12)
+        bar_layout.setSpacing(10)
 
-        # Threshold parameters
-        thresholdparameters=ctk.CTkFrame(spikedetectionparameters)
-        thresholdparameters.grid(row=1, column=0, padx=10, pady=10, sticky='nsew')
+        save_btn = QPushButton("✓  Save and Return")
+        save_btn.setObjectName("PrimaryBtn")
+        save_btn.setMinimumHeight(38)
+        save_btn.setMinimumWidth(160)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.clicked.connect(self.save_parameters)
 
-        thresholdparameters.grid_columnconfigure(0, weight=1)
+        import_btn = QPushButton("Import Parameters")
+        import_btn.setObjectName("SecondaryBtn")
+        import_btn.setMinimumHeight(38)
+        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        import_btn.clicked.connect(self.import_parameters)
 
-        thresholdparameters_label=ctk.CTkLabel(thresholdparameters, text="Threshold Parameters", font=ctk.CTkFont(size=15))
-        thresholdparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=2)
+        reset_btn = QPushButton("↺  Restore Defaults")
+        reset_btn.setObjectName("SecondaryBtn")
+        reset_btn.setMinimumHeight(38)
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Threshold portion
-        thresholdportionlabel=ctk.CTkLabel(master=thresholdparameters, text="Threshold portion:")
-        thresholdportionlabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        thresholdportiontooltip = CTkToolTip(thresholdportionlabel, message='Define the portion of the electrode data that is used for determining the threshold. A higher values will give a better estimate of the background noise, but will take longer to compute Ranges from 0 to 1.', wraplength=self.tooltipwraplength)
-        thresholdportioninput=ctk.CTkEntry(master=thresholdparameters)
-        thresholdportioninput.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+        def _reset():
+            self.load_parameters(self.parent.app_state.default_parameters)
 
-        # stdevmultiplier
-        stdevmultiplierlabel=ctk.CTkLabel(master=thresholdparameters, text="Standard Deviation Multiplier:")
-        stdevmultiplierlabel.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        stdevmultipliertooltip = CTkToolTip(stdevmultiplierlabel, message='Define when beyond which point values are seen as outliers (spikes) when identifying spike-free noise. A higher value will identify more data as noise', wraplength=self.tooltipwraplength)
-        stdevmultiplierinput=ctk.CTkEntry(master=thresholdparameters)
-        stdevmultiplierinput.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+        reset_btn.clicked.connect(_reset)
 
-        # RMSmultiplier
-        RMSmultiplierlabel=ctk.CTkLabel(master=thresholdparameters, text="RMS Multiplier:")
-        RMSmultiplierlabel.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        RMSmultipliertooltip = CTkToolTip(RMSmultiplierlabel, 'Define the multiplication factor of the root mean square (RMS) of the background noise. A higher number will lead to a higher threshold', wraplength=self.tooltipwraplength)
-        RMSmultiplierinput=ctk.CTkEntry(master=thresholdparameters)
-        RMSmultiplierinput.grid(row=3, column=1, padx=10, pady=10, sticky='w')
+        bar_layout.addWidget(save_btn)
+        bar_layout.addWidget(import_btn)
+        bar_layout.addWidget(reset_btn)
+        bar_layout.addStretch()
 
-        # Spike validation parameters
-        validationparameters=ctk.CTkFrame(spikedetectionparameters)
-        validationparameters.grid(row=2, column=0, padx=10, pady=10, sticky='nsew')
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("DangerBtn")
+        cancel_btn.setMinimumHeight(38)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.clicked.connect(lambda: self.parent.show_frame("workbench"))
+        bar_layout.addWidget(cancel_btn)
 
-        validationparameters.grid_columnconfigure(0, weight=1)
+        root.addWidget(bar)
 
-        validationparameters_label=ctk.CTkLabel(validationparameters, text="Spike Validation Parameters", font=ctk.CTkFont(size=15))
-        validationparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=2)
+    def _populate_grid(self):
+        """Build all grouped parameter sections into the grid."""
 
-        # Refractory period
-        refractoryperiodlabel=ctk.CTkLabel(master=validationparameters, text="Refractory Period:")
-        refractoryperiodlabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        refractoryperiodtooltip = CTkToolTip(refractoryperiodlabel, message='Define the refractory period in the spike detection In this period after a spike, no other spike can be detected. Value should be given in seconds, so 1 ms = 0.001 s', wraplength=self.tooltipwraplength)
-        refractoryperiodinput=ctk.CTkEntry(master=validationparameters)
-        refractoryperiodinput.grid(row=1, column=1, padx=10, pady=10, sticky='e')
+        # Filter
+        f_group = self._make_group("Filter Parameters")
+        self._add_input(f_group, "Low cutoff (Hz):", "low cutoff", 1, "e.g. 200", "Low-pass cutoff in Hz")
+        self._add_input(f_group, "High cutoff (Hz):", "high cutoff", 2, "e.g. 3500", "High-pass cutoff in Hz")
+        self._add_input(f_group, "Filter order:", "order", 3, "e.g. 2", "Butterworth filter order")
+        self.grid.addWidget(f_group, 0, 0)
 
-        # Dropdown menu where the user selects the validation method
-        def option_selected(choice):
-            validation_method = choice
-            if validation_method=='Noisebased':
-                exittimeinput.configure(state="normal")
-                maxheightinput.configure(state="normal")
-                amplitudedropinput.configure(state="normal")
-            else:
-                exittimeinput.configure(state="disabled")
-                maxheightinput.configure(state="disabled")
-                amplitudedropinput.configure(state="disabled")
-            
-        
-        options = ['Noisebased', 'none']    
-        dropdown_var = ctk.StringVar(value=options[0])
-        dropdownlabel = ctk.CTkLabel(master=validationparameters, text="Spike validation method:")
-        dropdownlabel.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        dropdowntooltip = CTkToolTip(dropdownlabel, 'Select the spike validation method. \'Noisebased\' will perform spike validation using surrounding noise, \'none\' will not perform any spike validation.', wraplength=self.tooltipwraplength)
-        dropdown_menu = ctk.CTkComboBox(validationparameters, variable=dropdown_var, values=options, command=option_selected)
-        dropdown_menu.grid(row=2, column=1, padx=10, pady=10, sticky='nes')
+        # Spike Detection
+        s_group = self._make_group("Spike Detection")
+        self._add_input(s_group, "Threshold portion:", "threshold portion", 1, "0–1", "Fraction of recording used for threshold estimation")
+        self._add_input(s_group, "Std Dev multiplier:", "standard deviation multiplier", 2, "e.g. 5.0")
+        self._add_input(s_group, "RMS multiplier:", "rms multiplier", 3, "e.g. 5.0")
+        self._add_input(s_group, "Refractory period (s):", "refractory period", 4, "e.g. 0.001")
 
-        exittimelabel=ctk.CTkLabel(master=validationparameters, text="Exit time:")
-        exittimelabel.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        exittimetooltip = CTkToolTip(exittimelabel, 'Define the time in which the signal must drop/rise a certain amplitude before/after a spike has been detected to be validated. Value should be given in seconds, so 1 ms is 0.001s', wraplength=self.tooltipwraplength)
-        exittimeinput=ctk.CTkEntry(master=validationparameters)
-        exittimeinput.grid(row=3, column=1, padx=10, pady=10, sticky='e')
+        s_group.layout().addWidget(self._field_label("Validation method:"), 5, 0)
+        self.val_method = QComboBox()
+        self.val_method.addItems(["Noisebased", "none"])
+        self.val_method.currentTextChanged.connect(self._toggle_validation_fields)
+        s_group.layout().addWidget(self.val_method, 5, 1)
 
-        amplitudedroplabel=ctk.CTkLabel(master=validationparameters, text="Drop amplitude:")
-        amplitudedroplabel.grid(row=4, column=0, padx=10, pady=10, sticky='w')
-        amplitudedroptooltip = CTkToolTip(amplitudedroplabel, 'Multiplied with the root mean square of the surrounding noise. This is the height the signal must drop/rise in amplitude to be validated.', wraplength=self.tooltipwraplength)
-        amplitudedropinput=ctk.CTkEntry(master=validationparameters)
-        amplitudedropinput.grid(row=4, column=1, padx=10, pady=10, sticky='e')
+        self._add_input(s_group, "Exit time:", "exit time", 6)
+        self._add_input(s_group, "Drop amplitude:", "drop amplitude", 7)
+        self._add_input(s_group, "Max drop:", "max drop", 8)
+        self.grid.addWidget(s_group, 0, 1, 2, 1)
 
-        maxheightlabel=ctk.CTkLabel(master=validationparameters, text="Max drop:")
-        maxheightlabel.grid(row=5, column=0, padx=10, pady=10, sticky='w')
-        maxheighttooltip = CTkToolTip(maxheightlabel, 'Multiplied with the threshold value of the electrode. The maximum height a spike can be required to drop in amplitude in the set timeframe', wraplength=self.tooltipwraplength)
-        maxheightinput=ctk.CTkEntry(master=validationparameters)
-        maxheightinput.grid(row=5, column=1, padx=10, pady=10, sticky='e')
+        # Burst Detection
+        b_group = self._make_group("Burst Detection")
+        self._add_input(b_group, "Min spikes:", "minimal amount of spikes", 1)
+        self._add_input(b_group, "Default interval (ms):", "default interval threshold", 2)
+        self._add_input(b_group, "Max interval (ms):", "max interval threshold", 3)
+        self._add_input(b_group, "ISI KDE bandwidth:", "burst detection kde bandwidth", 4)
+        self.grid.addWidget(b_group, 0, 2)
 
-        """Burst detection parameters"""
-        # Set up all the burst detection parameters
-        burstdetectionparameters=ctk.CTkFrame(self)
-        burstdetectionparameters.grid(row=0, column=2, padx=10, pady=10, sticky='nesw')
+        # Network Burst Detection
+        n_group = self._make_group("Network Burst")
+        self._add_input(n_group, "Min channels (0–1):", "min channels", 1)
+        n_group.layout().addWidget(self._field_label("Threshold method:"), 2, 0)
+        self.nw_method = QComboBox()
+        self.nw_method.addItems(["Yen", "Otsu", "Li", "Isodata", "Mean", "Minimum", "Triangle"])
+        n_group.layout().addWidget(self.nw_method, 2, 1)
+        self._add_input(n_group, "NBD KDE bandwidth:", "nbd kde bandwidth", 3)
+        self.grid.addWidget(n_group, 1, 2)
 
-        burstdetectionparameters_label=ctk.CTkLabel(burstdetectionparameters, text="Burst Detection Parameters", font=ctk.CTkFont(size=25))
-        burstdetectionparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=4)
-        burstdetectionparameters.grid_columnconfigure(0, weight=1)
+        # Other 
+        o_group = self._make_group("Other")
+        self.multi_check = QCheckBox("Use multiprocessing")
+        self.multi_check.setStyleSheet("background: transparent")
+        o_group.layout().addWidget(self.multi_check, 1, 0, 1, 2)
 
-        # Setup up the minimal amount of spikes for a burst
-        minspikeslabel=ctk.CTkLabel(master=burstdetectionparameters, text="Minimal amount of spikes:")
-        minspikeslabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        minspikestooltip = CTkToolTip(minspikeslabel, message='Define the minimal amount of spikes a burst should have before being considered as one.', wraplength=self.tooltipwraplength)
-        minspikesinput=ctk.CTkEntry(master=burstdetectionparameters)
-        minspikesinput.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+        o_group.layout().addWidget(self._field_label("Synchronicity method:"), 2, 0)
+        self.sync_method = QComboBox()
+        self.sync_method.addItems([
+            "ISI-distance", "Adaptive ISI-distance",
+            "SPIKE-distance", "Adaptive SPIKE-distance"
+        ])
+        o_group.layout().addWidget(self.sync_method, 2, 1)
 
-        # Setup up the default threshold
-        defaultthlabel=ctk.CTkLabel(master=burstdetectionparameters, text="Default interval threshold:")
-        defaultthlabel.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        defaultthtooltip = CTkToolTip(defaultthlabel, 'Define the default inter-spike interval threshold that is used for burst detection. Value should be given in miliseconds.', wraplength=self.tooltipwraplength)
-        defaultthinput=ctk.CTkEntry(master=burstdetectionparameters)
-        defaultthinput.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+        self.remove_inactive = QCheckBox("Remove inactive electrodes")
+        self.remove_inactive.toggled.connect(
+            lambda checked: self.inputs["activity threshold"].setEnabled(checked)
+        )
+        self.remove_inactive.setStyleSheet("background: transparent")
+        o_group.layout().addWidget(self.remove_inactive, 3, 0, 1, 2)
+        self._add_input(o_group, "Activity threshold (Hz):", "activity threshold", 4)
+        self.grid.addWidget(o_group, 1, 0)
 
-        # Setup up the max threshold
-        maxisilabel=ctk.CTkLabel(master=burstdetectionparameters, text="Max interval threshold:")
-        maxisilabel.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        maxisitooltip = CTkToolTip(maxisilabel, message='Define the maximum value the inter-spike interval threshold can be when 2 valid peaks have been detected in the ISI graph. Value should be given in miliseconds.', wraplength=self.tooltipwraplength)
-        maxisiinput=ctk.CTkEntry(master=burstdetectionparameters)
-        maxisiinput.grid(row=3, column=1, padx=10, pady=10, sticky='w')
+    def _make_group(self, title: str) -> QGroupBox:
+        g = QGroupBox(title)
+        layout = QGridLayout()
+        layout.setColumnStretch(1, 1)
+        layout.setSpacing(8)
+        g.setLayout(layout)
+        return g
 
-        # Setup the KDE bandwidth
-        isikdebwlabel=ctk.CTkLabel(master=burstdetectionparameters, text="KDE bandwidth:")
-        isikdebwlabel.grid(row=4, column=0, padx=10, pady=10, sticky='w')
-        isikdebwtooltip = CTkToolTip(isikdebwlabel, message='Define the bandwidth that is used when calculating the kernel density estimate of the inter-spike intervals.', wraplength=self.tooltipwraplength)
-        isikdebwinput=ctk.CTkEntry(master=burstdetectionparameters)
-        isikdebwinput.grid(row=4, column=1, padx=10, pady=10, sticky='w')
+    def _field_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet("color: #8b95a8; font-size: 12px; background: transparent")
+        return lbl
 
-        """Network burst detection parameters"""
-        networkburstdetectionparameters=ctk.CTkFrame(self)
-        networkburstdetectionparameters.grid(row=1, column=2, padx=10, pady=10, sticky='nesw')
-        networkburstdetectionparameters_label=ctk.CTkLabel(networkburstdetectionparameters, text="Network Burst Detection Parameters", font=ctk.CTkFont(size=25))
-        networkburstdetectionparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=2)
-        networkburstdetectionparameters.grid_columnconfigure(0, weight=1)
+    def _add_input(self, group: QGroupBox, label_text: str, key: str,
+                   row: int, placeholder: str = "", tooltip: str = ""):
+        lbl = self._field_label(label_text)
+        entry = QLineEdit()
+        entry.setPlaceholderText(placeholder)
+        if tooltip:
+            lbl.setToolTip(tooltip)
+            entry.setToolTip(tooltip)
+        group.layout().addWidget(lbl, row, 0)
+        group.layout().addWidget(entry, row, 1)
+        self.inputs[key] = entry
 
-        # Setup the minimum amount of channels participating
-        minchannelslabel=ctk.CTkLabel(master=networkburstdetectionparameters, text="Min channels:")
-        minchannelslabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        minchannelstooltip = CTkToolTip(minchannelslabel, 'Define the minimal percentage of channels that should be active in a network burst, values ranges from 0 to 1. For example, a value of 0.5 requires half of the channels to be actively bursting during a network burst.', wraplength=self.tooltipwraplength)
-        minchannelsinput=ctk.CTkEntry(master=networkburstdetectionparameters)
-        minchannelsinput.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+    def _toggle_validation_fields(self, choice: str):
+        is_noise = (choice == "Noisebased")
+        for k in ("exit time", "drop amplitude", "max drop"):
+            self.inputs[k].setEnabled(is_noise)
 
-        # Setup the thresholding method
-        nwthoptions = ['Yen', 'Otsu', 'Li', 'Isodata', 'Mean', 'Minimum', 'Triangle']
-        networkth_var = ctk.StringVar(value=nwthoptions[0])
-        nbd_dropdownlabel = ctk.CTkLabel(master=networkburstdetectionparameters, text="Thresholding method:")
-        nbd_dropdownlabel.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        nbd_dropdownlabel = CTkToolTip(nbd_dropdownlabel, 'The application offers multiple methods to automatically calculate the network burst detection activity threshold. Methods are derived from the scikit-image filters library.', wraplength=self.tooltipwraplength)
-        dropdown_menu = ctk.CTkComboBox(networkburstdetectionparameters, variable=networkth_var, values=nwthoptions)
-        dropdown_menu.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+    def load_parameters(self, params: dict):
+        """
+        Populate all widgets from a parameter dictionary.
+        """
+        # Text inputs
+        for key, widget in self.inputs.items():
+            if key in params:
+                widget.setText(str(params[key]))
 
-        # Setup the network burst detection KDE bandwidth
-        nbd_kde_bandwidth_label=ctk.CTkLabel(master=networkburstdetectionparameters, text="KDE Bandwidth:")
-        nbd_kde_bandwidth_label.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        nbd_kde_bandwidth_tooltip = CTkToolTip(nbd_kde_bandwidth_label, 'Define the bandwidth value that should be used when creating the kernel density estimate for the network burst detection.', wraplength=self.tooltipwraplength)
-        nbd_kde_bandwidth_input=ctk.CTkEntry(master=networkburstdetectionparameters)
-        nbd_kde_bandwidth_input.grid(row=3, column=1, padx=10, pady=10, sticky='w')
+        # ComboBoxes
+        if "spike validation method" in params:
+            self.val_method.setCurrentText(params["spike validation method"])
+        if "thresholding method" in params:
+            self.nw_method.setCurrentText(params["thresholding method"])
+        if "synchronicity method" in params:
+            self.sync_method.setCurrentText(params["synchronicity method"])
 
-        """Other parameters"""
-        otherparameters=ctk.CTkFrame(self)
-        otherparameters.grid(row=1, column=0, padx=10, pady=10, sticky='nsew')
-        otherparameters_label=ctk.CTkLabel(otherparameters, text="Other Parameters", font=ctk.CTkFont(size=25))
-        otherparameters_label.grid(row=0, column=0, padx=10, pady=10, sticky='w', columnspan=2)
+        # CheckBoxes
+        if "use multiprocessing" in params:
+            self.multi_check.setChecked(bool(params["use multiprocessing"]))
+        if "remove inactive electrodes" in params:
+            self.remove_inactive.setChecked(bool(params["remove inactive electrodes"]))
 
-        def removeinactivefunc():
-            if removeinactivevar.get():
-                activitythinput.configure(state='normal')
-            else:
-                activitythinput.configure(state='disabled')
+        self._toggle_validation_fields(self.val_method.currentText())
 
-        # Use multiprocessing
-        multiprocessinglabel=ctk.CTkLabel(otherparameters, text="Use multiprocessing:")
-        multiprocessinglabel.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        multiprocessingtooltip = CTkToolTip(multiprocessinglabel, message='Using multiprocessing means the electrodes will be analyzed in parallel, generally speeding up the analysis. Multiprocessing might not work properly if the device you\'re using does not have sufficient RAM/CPU-cores', wraplength=self.tooltipwraplength)
-        multiprocessingvar=ctk.BooleanVar()
-        multiprocessinginput=ctk.CTkCheckBox(otherparameters, onvalue=True, offvalue=False, variable=multiprocessingvar, text='')
-        multiprocessinginput.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+    def import_parameters(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Parameter File", "", "JSON Files (*.json)"
+        )
+        if path:
+            with open(path, "r") as f:
+                data = json.load(f)
+            self.load_parameters(data)
 
-        # Select synchronicity method
-        sync_method_label = ctk.CTkLabel(master=otherparameters, text="Synchronicity method:")
-        sync_method_label.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        sync_method_tooltip = CTkToolTip(sync_method_label, message="Choose the method to compute synchronicity between spike trains.", wraplength=self.tooltipwraplength)
+    def save_parameters(self):
+        try:
+            p = self.parent.app_state.parameters
 
-        sync_options = ["ISI-distance", "Adaptive ISI-distance",  "SPIKE-distance", "Adaptive SPIKE-distance"]
-        sync_method_var = ctk.StringVar(value="SPIKE-distance") 
-        sync_method_dropdown = ctk.CTkComboBox(master=otherparameters, variable=sync_method_var, values=sync_options)
-        sync_method_dropdown.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+            # Integers
+            for key in ("low cutoff", "high cutoff", "order", "minimal amount of spikes"):
+                p[key] = int(self.inputs[key].text())
 
-        # Remove inactive electrodes
-        removeinactivelabel=ctk.CTkLabel(otherparameters, text="Remove inactive electrodes:")
-        removeinactivelabel.grid(row=3, column=0, padx=10, pady=10, sticky='w')
-        removeinactivetooltip = CTkToolTip(removeinactivelabel, message='Remove inactive electrodes from the spike, burst and network burst feature calculations.', wraplength=self.tooltipwraplength)
-        removeinactivevar=ctk.IntVar()
-        removeinactiveinput=ctk.CTkCheckBox(otherparameters, onvalue=True, offvalue=False, variable=removeinactivevar, command=removeinactivefunc, text='')
-        removeinactiveinput.grid(row=3, column=1, padx=10, pady=10, sticky='w')
+            # Floats
+            for key in (
+                "refractory period", "exit time", "burst detection kde bandwidth",
+                "max interval threshold", "default interval threshold",
+                "max drop", "drop amplitude", "standard deviation multiplier",
+                "rms multiplier", "min channels", "nbd kde bandwidth",
+                "activity threshold", "threshold portion",
+            ):
+                p[key] = float(self.inputs[key].text())
 
-        # Setup the activity threshold
-        activitythlabel=ctk.CTkLabel(master=otherparameters, text="Activity threshold:")
-        activitythlabel.grid(row=4, column=0, padx=10, pady=10, sticky='w')
-        activitythtooltip = CTkToolTip(activitythlabel, message='Define the minimal activity a channel must have, to be used in calculating features. Value should be given in hertz, so a value of 0.1 would mean any channel with less that 1 spike per 10 seconds will be removed', wraplength=self.tooltipwraplength)
-        activitythinput=ctk.CTkEntry(otherparameters)
-        activitythinput.grid(row=4, column=1, padx=10, pady=10, sticky='w')
+            # Enums / booleans
+            p["thresholding method"]      = self.nw_method.currentText()
+            p["spike validation method"]  = self.val_method.currentText()
+            p["synchronicity method"]     = self.sync_method.currentText()
+            p["remove inactive electrodes"] = self.remove_inactive.isChecked()
+            p["use multiprocessing"]      = self.multi_check.isChecked()
 
-        """Buttons and functions for saving, resetting and importing parameters"""
-        def set_parameters(parameters):
+            self.parent.show_frame("workbench")
 
-            # Make sure every entry is set to 'normal'
-            dropdown_var.set("Noisebased")
-            removeinactivevar.set(True)
-            removeinactivefunc()
-            option_selected(dropdown_var.get())
-
-            lowcutoffinput.delete(0, END)
-            lowcutoffinput.insert(0, parameters["low cutoff"])
-            highcutoffinput.delete(0, END)
-            highcutoffinput.insert(0, parameters["high cutoff"])
-            orderinput.delete(0, END)
-            orderinput.insert(0, parameters["order"])
-            thresholdportioninput.delete(0, END)
-            thresholdportioninput.insert(0, parameters["threshold portion"])
-            stdevmultiplierinput.delete(0, END)
-            stdevmultiplierinput.insert(0, parameters["standard deviation multiplier"])
-            RMSmultiplierinput.delete(0, END)
-            RMSmultiplierinput.insert(0, parameters["rms multiplier"])
-            refractoryperiodinput.delete(0, END)
-            refractoryperiodinput.insert(0, parameters["refractory period"])
-            dropdown_var.set(parameters["spike validation method"])
-            exittimeinput.delete(0, END)
-            exittimeinput.insert(0, parameters["exit time"])
-            amplitudedropinput.delete(0, END)
-            amplitudedropinput.insert(0, parameters["drop amplitude"])
-            maxheightinput.delete(0, END)
-            maxheightinput.insert(0, parameters["max drop"])
-            minspikesinput.delete(0, END)
-            minspikesinput.insert(0, parameters["minimal amount of spikes"])
-            defaultthinput.delete(0, END)
-            defaultthinput.insert(0, parameters["default interval threshold"])
-            maxisiinput.delete(0, END)
-            maxisiinput.insert(0, parameters["max interval threshold"])
-            isikdebwinput.delete(0, END)
-            isikdebwinput.insert(0, parameters["burst detection kde bandwidth"])
-            minchannelsinput.delete(0, END)
-            minchannelsinput.insert(0, parameters["min channels"])
-            networkth_var.set(parameters["thresholding method"])
-            removeinactivevar.set(bool(parameters["remove inactive electrodes"]))
-            activitythinput.delete(0, END)
-            activitythinput.insert(0, parameters["activity threshold"])
-            multiprocessingvar.set(bool(parameters["use multiprocessing"]))
-            sync_method_var.set(parameters.get("synchronicity method", "SPIKE-distance"))
-            nbd_kde_bandwidth_input.delete(0, END)
-            nbd_kde_bandwidth_input.insert(0, parameters["nbd kde bandwidth"])
-
-            # Update other parameter availability
-            removeinactivefunc()
-            option_selected(dropdown_var.get())
-
-        def import_parameters():
-            parametersfile = filedialog.askopenfilename(filetypes=[("Parameter file", "*.json")])
-            if parametersfile == '':
-                return
-            parameters=json.load(open(parametersfile))
-            
-            set_parameters(parameters)
-
-        def save_parameters():
-            try:
-                self.parent.parameters['low cutoff']=int(lowcutoffinput.get())
-                self.parent.parameters['high cutoff']=int(highcutoffinput.get())
-                self.parent.parameters['order']=int(orderinput.get())
-                self.parent.parameters['refractory period']=float(refractoryperiodinput.get())
-                self.parent.parameters['exit time']=float(exittimeinput.get())
-                self.parent.parameters['burst detection kde bandwidth']=float(isikdebwinput.get())
-                self.parent.parameters['minimal amount of spikes']=int(minspikesinput.get())
-                self.parent.parameters['max interval threshold']=float(maxisiinput.get())
-                self.parent.parameters['default interval threshold']=float(defaultthinput.get())
-                self.parent.parameters['max drop']=float(maxheightinput.get())
-                self.parent.parameters['drop amplitude']=float(amplitudedropinput.get())
-                self.parent.parameters['standard deviation multiplier']=float(stdevmultiplierinput.get())
-                self.parent.parameters['rms multiplier']=float(RMSmultiplierinput.get())
-                self.parent.parameters['min channels']=float(minchannelsinput.get())
-                self.parent.parameters['thresholding method']=networkth_var.get()
-                self.parent.parameters['nbd kde bandwidth']=float(nbd_kde_bandwidth_input.get())
-                self.parent.parameters['remove inactive electrodes']=bool(removeinactivevar.get())
-                self.parent.parameters['activity threshold']=float(activitythinput.get())
-                self.parent.parameters['threshold portion']=float(thresholdportioninput.get())
-                self.parent.parameters['spike validation method']=str(dropdown_var.get())
-                self.parent.parameters['use multiprocessing']=bool(multiprocessingvar.get())
-                self.parent.parameters['synchronicity method'] = str(sync_method_var.get())
-                self.parent.show_frame(self.parent.home_frame)
-
-            except Exception as error:
-                traceback.print_exc()
-                CTkMessagebox(title="Error",
-                              message=f'Certain parameters could not be converted to the correct datatype (e.g. int or float). Please check if every parameter has the correct values\n\n{error}',
-                              icon="cancel",
-                              wraplength=400)
-        
-        set_parameters(self.parent.parameters)
-
-        def set_default_parameters():
-            set_parameters(self.parent.default_parameters)
-
-        default_parameters=ctk.CTkButton(master=self, text="Restore default parameters", command=set_default_parameters)
-        default_parameters.grid(row=3, column=1, padx=10, pady=10, sticky='nsew')
-
-        import_parameters_button=ctk.CTkButton(master=self, text="Import parameters", command=import_parameters)
-        import_parameters_button.grid(row=3, column=2, padx=10, pady=10, sticky='nsew')
-
-        save_parameters_button=ctk.CTkButton(master=self, text="Save parameters and return", command=save_parameters)
-        save_parameters_button.grid(row=3, column=0, padx=10, pady=10, sticky='nsew')
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(
+                self, "Validation Error",
+                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}"
+            )

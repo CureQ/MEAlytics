@@ -1,328 +1,687 @@
-# Imports
 import os
-import json
-import math
-import webbrowser
 import sys
+import json
+import webbrowser
 from pathlib import Path
-from tkinter import *
-from importlib.metadata import version
 
-# External libraries
-import numpy as np
-import customtkinter as ctk
-from CTkToolTip import *
-from CTkColorPicker import *
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QFrame, QStackedWidget, QFileDialog,
+    QProgressBar, QTextEdit, QScrollArea, QSizePolicy, QSpacerItem,
+    QMessageBox, QLineEdit, QGridLayout, QSplitter
+)
+from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap, QPainter, QBrush
 
-# Package imports
-from MEAlytics.mea import get_default_parameters
-from MEAlytics.core._utilities import gui_logger
+# Core Imports
+from MEAlytics.mea import get_default_parameters, AnalysisWorker
 
-# Import GUI components
-from MEAlytics.GUI._exclude_electrodes import recalculate_features_class
-from MEAlytics.GUI._parameters import parameter_frame
-from MEAlytics.GUI._view_results import select_folder_frame
-from MEAlytics.GUI._process_file import process_file_frame
-from MEAlytics.GUI._batch_processing import batch_processing
-from MEAlytics.GUI._compress_files import compress_files
-from MEAlytics.GUI._plotting import plotting_window
+# GUI Imports
+from MEAlytics.GUI._parameters import ParameterFrame
+from MEAlytics.GUI._theme import STYLESHEET, DARK_BG, SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR, ACCENT, ACCENT_HOVER, ACCENT_MUTED, SUCCESS, WARNING, DANGER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, SIDEBAR_WIDTH
+from MEAlytics.GUI._theme import make_label, make_divider, icon_text_btn
 
-class MainApp(ctk.CTk):
-    """
-    Control frame selection and hold 'global' variables.
-    """
+
+# Main window classes
+class DropZone(QFrame):
+    """Drag-and-drop target that also allows browsing"""
+    files_dropped = pyqtSignal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("DropZone")
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(130)
+
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(8)
+
+        hint = QLabel("Drop HDF5 files here  ·  or")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none; font-size: 13px;")
+        layout.addWidget(hint)
+
+        browse = QPushButton("Browse Files")
+        browse.setObjectName("SecondaryBtn")
+        browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse.setFixedWidth(140)
+        browse.clicked.connect(self.browse)
+        layout.addWidget(browse, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def browse(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select HDF5 Files", "", "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+        )
+        if paths:
+            self.files_dropped.emit(paths)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.toLocalFile().endswith(('.h5', '.hdf5'))]
+        if paths:
+            self.files_dropped.emit(paths)
+
+
+class FileJobCard(QFrame):
+    """A single file analysis job card with live progress"""
+
+    def __init__(self, filepath: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("FileCard")
+        self.filepath = filepath
+        self.filename = Path(filepath).name
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 14, 16, 14)
+        outer.setSpacing(8)
+
+        # Filename
+        row1 = QHBoxLayout()
+        name_lbl = QLabel(self.filename)
+        name_lbl.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {TEXT_PRIMARY}; background: transparent")
+        row1.addWidget(name_lbl)
+        row1.addStretch()
+
+        self.status_badge = QLabel("Queued")
+        self.status_badge.setObjectName("StatusBadge")
+        self.status_badge.setStyleSheet(f"background: {SURFACE_2}")
+        row1.addWidget(self.status_badge)
+        outer.addLayout(row1)
+
+        # File path
+        path_lbl = QLabel(str(Path(filepath).parent))
+        path_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        outer.addWidget(path_lbl)
+
+        # Progress bar
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        outer.addWidget(self.progress)
+
+        # Console log
+        self.console = QTextEdit()
+        self.console.setObjectName("Console")
+        self.console.setReadOnly(True)
+        self.console.setFixedHeight(90)
+        self.console.setVisible(False)
+        outer.addWidget(self.console)
+
+        # Action buttons
+        btn_row = QHBoxLayout()
+        self.toggle_log_btn = QPushButton("Show Log")
+        self.toggle_log_btn.setObjectName("SecondaryBtn")
+        self.toggle_log_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_log_btn.clicked.connect(self.toggle_log)
+
+        self.view_results_btn = QPushButton("View Results  →")
+        self.view_results_btn.setObjectName("PrimaryBtn")
+        self.view_results_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.view_results_btn.setEnabled(False)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("DangerBtn")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.setVisible(False)   # only shown while running
+
+        self.remove_btn = QPushButton("Remove")
+        self.remove_btn.setObjectName("DangerBtn")
+        self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        btn_row.addWidget(self.toggle_log_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self.view_results_btn)
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addWidget(self.remove_btn)
+        outer.addLayout(btn_row)
+
+    def toggle_log(self):
+        visible = self.console.isVisible()
+        self.console.setVisible(not visible)
+        self.toggle_log_btn.setText("Hide Log" if not visible else "Show Log")
+
+    def log(self, message: str):
+        self.console.append(message)
+
+    def set_running(self):
+        self.status_badge.setText("Running")
+        self.status_badge.setObjectName("StatusBadge")
+        self.status_badge.setStyle(self.status_badge.style())
+        self.cancel_btn.setVisible(True)
+        self.remove_btn.setVisible(False)
+
+    def set_complete(self):
+        self.progress.setValue(100)
+        self.status_badge.setText("Complete")
+        self.status_badge.setObjectName("SuccessBadge")
+        self.status_badge.setStyle(self.status_badge.style())
+        self.cancel_btn.setVisible(False)
+        self.remove_btn.setVisible(True)
+        self.view_results_btn.setEnabled(True)
+
+    def set_failed(self, aborted: bool = False):
+        self.status_badge.setText("Cancelled" if aborted else "Failed")
+        self.status_badge.setObjectName("DangerBadge")
+        self.status_badge.setStyle(self.status_badge.style())
+        self.cancel_btn.setVisible(False)
+        self.remove_btn.setVisible(True)
+
+class WorkbenchView(QWidget):
+
+    def __init__(self, app_state, parent=None):
+        super().__init__(parent)
+        self.app_state = app_state
+        self.job_cards: list[FileJobCard] = []
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(32, 28, 32, 28)
+        content_layout.setSpacing(20)
+
+        header_row = QHBoxLayout()
+        title = make_label("Workbench", "PageTitle")
+        header_row.addWidget(title)
+        header_row.addStretch()
+
+        self.start_btn = QPushButton("▶  Start Analysis")
+        self.start_btn.setObjectName("PrimaryBtn")
+        self.start_btn.setMinimumHeight(40)
+        self.start_btn.setMinimumWidth(160)
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.clicked.connect(self.start_analysis)
+        self.cancel_all_btn = QPushButton("✕  Remove All")
+        self.cancel_all_btn.setObjectName("DangerBtn")
+        self.cancel_all_btn.setMinimumHeight(40)
+        self.cancel_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_all_btn.clicked.connect(self._cancel_all)
+        header_row.addWidget(self.cancel_all_btn)
+        header_row.addWidget(self.start_btn)
+        content_layout.addLayout(header_row)
+
+        # Critical parameters card
+        params_card = QFrame()
+        params_card.setObjectName("Card")
+        params_card_layout = QVBoxLayout(params_card)
+        params_card_layout.setContentsMargins(20, 16, 20, 16)
+        params_card_layout.setSpacing(12)
+
+        cp_header = QHBoxLayout()
+        cp_title = make_label("Required Parameters", "SectionLabel")
+        cp_header.addWidget(cp_title)
+        cp_header.addStretch()
+
+        self.params_status = QLabel("Required before analysis")
+        self.params_status.setObjectName("WarningBadge")
+        cp_header.addWidget(self.params_status)
+        params_card_layout.addLayout(cp_header)
+
+        fields_row = QHBoxLayout()
+        fields_row.setSpacing(24)
+
+        # Electrodes per well
+        e_col = QVBoxLayout()
+        e_col.setSpacing(4)
+        e_col.addWidget(make_label("Electrodes per Well", "MetaLabel"))
+        self.electrodes_input = QLineEdit()
+        self.electrodes_input.setPlaceholderText("e.g.  12")
+        self.electrodes_input.setFixedWidth(140)
+        self.electrodes_input.textChanged.connect(self._check_critical_params)
+        e_col.addWidget(self.electrodes_input)
+        fields_row.addLayout(e_col)
+
+        # Measuring frequency
+        f_col = QVBoxLayout()
+        f_col.setSpacing(4)
+        f_col.addWidget(make_label("Measuring Frequency (Hz)", "MetaLabel"))
+        self.frequency_input = QLineEdit()
+        self.frequency_input.setPlaceholderText("e.g.  20000")
+        self.frequency_input.setFixedWidth(160)
+        self.frequency_input.textChanged.connect(self._check_critical_params)
+        f_col.addWidget(self.frequency_input)
+        fields_row.addLayout(f_col)
+
+        fields_row.addStretch()
+        params_card_layout.addLayout(fields_row)
+        content_layout.addWidget(params_card)
+
+        # Drop zone
+        self.drop_zone = DropZone()
+        self.drop_zone.files_dropped.connect(self.add_files)
+        content_layout.addWidget(self.drop_zone)
+
+        # Scrollable job list
+        self.jobs_scroll = QScrollArea()
+        self.jobs_scroll.setWidgetResizable(True)
+        self.jobs_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        self.jobs_container = QWidget()
+        self.jobs_layout = QVBoxLayout(self.jobs_container)
+        self.jobs_layout.setContentsMargins(0, 0, 0, 0)
+        self.jobs_layout.setSpacing(10)
+        self.jobs_layout.addStretch()
+
+        self.jobs_scroll.setWidget(self.jobs_container)
+        content_layout.addWidget(self.jobs_scroll, 1)
+
+        root.addWidget(content_widget, 1)
+        self._init_queue()
+        self._check_critical_params()
+
+    def _check_critical_params(self):
+        e = self.electrodes_input.text().strip()
+        f = self.frequency_input.text().strip()
+        ok = e.isdigit() and f.isdigit()
+        self.start_btn.setEnabled(ok and len(self.job_cards) > 0)
+        if ok:
+            self.params_status.setText("Parameters set")
+            self.params_status.setObjectName("SuccessBadge")
+        else:
+            self.params_status.setText("Required before analysis")
+            self.params_status.setObjectName("WarningBadge")
+        self.params_status.setStyle(self.params_status.style())
+
+    def _init_queue(self):
+        """Call once from __init__ after building the UI."""
+        self._queue: list[FileJobCard] = []   # cards waiting to run
+        self._active_card: FileJobCard | None = None
+        self._active_worker: AnalysisWorker | None = None
+        self._active_thread: QThread | None = None
+
+    # File management
+    def add_files(self, paths: list):
+        existing = {c.filepath for c in self.job_cards}
+        for path in paths:
+            if path not in existing:
+                card = FileJobCard(path)
+                card.remove_btn.clicked.connect(lambda _, c=card: self.remove_card(c))
+                card.cancel_btn.clicked.connect(lambda _, c=card: self._cancel_card(c))
+                self.jobs_layout.insertWidget(self.jobs_layout.count() - 1, card)
+                self.job_cards.append(card)
+                self._queue.append(card)
+        self._check_critical_params()
+
+    def remove_card(self, card: FileJobCard):
+        """Remove a queued or finished card."""
+        if card is self._active_card:
+            self._cancel_card(card)
+            return
+        if card in self._queue:
+            self._queue.remove(card)
+        self.jobs_layout.removeWidget(card)
+        card.deleteLater()
+        self.job_cards.remove(card)
+        self._check_critical_params()
+
+    def _cancel_card(self, card: FileJobCard):
+        """Cancel the currently running job."""
+        if card is self._active_card and self._active_worker is not None:
+            self._active_worker.request_stop()
+            card.log("Cancellation requested…")
+
+    # Analysis queue
+    def start_analysis(self):
+        e = int(self.electrodes_input.text().strip())
+        f = int(self.frequency_input.text().strip())
+
+        self._queue = [c for c in self.job_cards if c.status_badge.text() == "Queued"]
+
+        if not self._queue:
+            return
+
+        self.start_btn.setEnabled(False)
+        self._run_next(e, f)
+
+    def _run_next(self, electrodes: int, frequency: int):
+        if not self._queue:
+            self._check_critical_params()
+            return
+
+        card = self._queue.pop(0)
+        self._active_card = card
+        card.set_running()
+
+        params = dict(self.app_state.parameters)
+
+        worker = AnalysisWorker(
+            filepath       = card.filepath,
+            sampling_rate  = frequency,
+            electrode_amnt = electrodes,
+            parameters     = params,
+        )
+        thread = QThread(self)
+
+        worker.moveToThread(thread)
+
+        # Wire signals
+        thread.started.connect(worker.run)
+        worker.log_message.connect(card.log)
+        worker.progress_updated.connect(
+            lambda cur, tot, c=card: c.progress.setValue(int(cur / tot * 100)) if tot > 0 else None
+        )
+        worker.finished.connect(lambda success, c=card, e=electrodes, f=frequency:
+                                self._on_job_finished(c, success, e, f))
+
+        # Clean up thread after worker is done
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        self._active_worker = worker
+        self._active_thread = thread
+        thread.start()
+
+    def _on_job_finished(self, card: FileJobCard, success: bool, electrodes: int, frequency: int):
+        if success:
+            card.set_complete()
+        else:
+            card.set_failed(aborted=not success)
+
+        self._active_card   = None
+        self._active_worker = None
+        self._active_thread = None
+
+        self._run_next(electrodes, frequency)
+
+    def _cancel_all(self):
+        if self._active_worker is not None:
+            self._active_worker.request_stop()
+
+        self._queue.clear()
+
+        for card in list(self.job_cards):
+            if card is not self._active_card:
+                self.jobs_layout.removeWidget(card)
+                card.deleteLater()
+                self.job_cards.remove(card)
+
+        self._check_critical_params()
+
+# View Results
+class ObservatoryView(QWidget):
+    def __init__(self, app_state, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(20)
+
+        layout.addWidget(make_label("View Results", "PageTitle"))
+        layout.addWidget(make_divider())
+
+        load_card = QFrame()
+        load_card.setObjectName("Card")
+        load_layout = QVBoxLayout(load_card)
+        load_layout.setContentsMargins(28, 24, 28, 24)
+        load_layout.setSpacing(12)
+
+        load_layout.addWidget(make_label("Load Analysis Output", "SectionLabel"))
+        desc = QLabel(
+            "Select the output folder generated by the analysis to explore results.\n"
+            "Wells and electrode drill-down open in interactive windows."
+        )
+        desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px; background-color: {SURFACE_1};")
+        desc.setWordWrap(True)
+        load_layout.addWidget(desc)
+
+        btn_row = QHBoxLayout()
+        browse_btn = QPushButton("Select Output Folder")
+        browse_btn.setObjectName("PrimaryBtn")
+        browse_btn.setMinimumHeight(40)
+        browse_btn.setMinimumWidth(220)
+        browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_row.addWidget(browse_btn)
+        btn_row.addStretch()
+        load_layout.addLayout(btn_row)
+
+        layout.addWidget(load_card)
+        layout.addStretch()
+
+# Utilities
+class UtilitiesView(QWidget):
+    def __init__(self, app_state, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(20)
+
+        layout.addWidget(make_label("Utilities", "PageTitle"))
+        layout.addWidget(make_divider())
+
+        cards_grid = QGridLayout()
+        cards_grid.setSpacing(16)
+
+        utilities = [
+            ("Plotting",
+             "Extract output features from multiple experiments and visualise changes over time.",
+             "Open Plotting"),
+            ("Rechunk / Compress",
+             "Rechunk and compress HDF5 files for faster access and reduced storage.",
+             "Open Tool"),
+            ("Exclude Electrodes",
+             "Exclude specific electrodes and re-run only the feature extraction step.",
+             "Open Tool"),
+        ]
+
+        for i, (title, desc, btn_label) in enumerate(utilities):
+            card = QFrame()
+            card.setObjectName("Card")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(22, 20, 22, 20)
+            cl.setSpacing(10)
+
+            t = QLabel(title)
+            t.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {TEXT_PRIMARY}; background-color: {SURFACE_1};")
+            cl.addWidget(t)
+
+            d = QLabel(desc)
+            d.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background-color: {SURFACE_1};")
+            d.setWordWrap(True)
+            cl.addWidget(d)
+            cl.addStretch()
+
+            btn = QPushButton(btn_label)
+            btn.setObjectName("SecondaryBtn")
+            btn.setMinimumHeight(36)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            cl.addWidget(btn)
+
+            cards_grid.addWidget(card, 0, i)
+
+        layout.addLayout(cards_grid)
+        layout.addStretch()
+
+
+# Sidebar
+class Sidebar(QFrame):
+    nav_requested = pyqtSignal(str)
+    settings_requested = pyqtSignal()
+
+    def __init__(self, app_state, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Sidebar")
+        self.setFixedWidth(SIDEBAR_WIDTH)
+        self.app_state = app_state
+        self._active_page = "workbench"
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 20, 12, 16)
+        layout.setSpacing(2)
+
+        logo_row = QHBoxLayout()
+        logo_row.setSpacing(10)
+
+        basedir = os.path.dirname(__file__)
+        logo_path = os.path.join(basedir, "MEAlytics_logo.png")
+        logo_icon = QLabel()
+        logo_icon.setStyleSheet(f"background-color: {SURFACE_1};")
+        pixmap = QPixmap(logo_path)
+        scaled_pixmap = pixmap.scaledToHeight(30, Qt.TransformationMode.SmoothTransformation)
+        logo_icon.setPixmap(scaled_pixmap)
+        logo_row.addWidget(logo_icon)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(0)
+        title_label = make_label("MEAlytics", "AppTitle")
+        title_label.setStyleSheet(f"background-color: {SURFACE_1};")
+        title_col.addWidget(title_label)
+        logo_row.addLayout(title_col)
+        logo_row.addStretch()
+        layout.addLayout(logo_row)
+
+        layout.addSpacing(20)
+        layout.addWidget(make_divider())
+        layout.addSpacing(10)
+
+        layout.addWidget(make_label("ANALYSIS", "SidebarSection"))
+        layout.addSpacing(4)
+
+        self.nav_btns: dict[str, QPushButton] = {}
+
+        nav_items = [
+            ("workbench", "", "Workbench"),
+            ("observatory", "", "Observatory"),
+        ]
+        for page_id, icon, label in nav_items:
+            btn = icon_text_btn(icon, label, "NavBtn")
+            btn.clicked.connect(lambda _, pid=page_id: self._on_nav(pid))
+            layout.addWidget(btn)
+            self.nav_btns[page_id] = btn
+
+        layout.addSpacing(12)
+        layout.addWidget(make_label("TOOLS", "SidebarSection"))
+        layout.addSpacing(4)
+
+        util_btn = icon_text_btn("", "Utilities", "NavBtn")
+        util_btn.clicked.connect(lambda: self._on_nav("utilities"))
+        layout.addWidget(util_btn)
+        self.nav_btns["utilities"] = util_btn
+
+        layout.addSpacing(12)
+        layout.addWidget(make_divider())
+        layout.addSpacing(8)
+        layout.addWidget(make_label("CONFIGURATION", "SidebarSection"))
+        layout.addSpacing(4)
+
+        params_btn = icon_text_btn("", "Parameters", "NavBtn")
+        params_btn.clicked.connect(lambda: self._on_nav("parameters"))
+        layout.addWidget(params_btn)
+        self.nav_btns["parameters"] = params_btn
+
+        layout.addStretch()
+
+        # External links
+        layout.addWidget(make_divider())
+        layout.addSpacing(6)
+
+        links = [
+            ("CureQ Project", "https://cureq.nl/"),
+            ("PyPI",          "https://pypi.org/project/MEAlytics/"),
+            ("GitHub",        "https://github.com/CureQ/MEAlytics"),
+            ("User Guide",    "https://cureq.github.io/MEAlytics/"),
+        ]
+        for text, url in links:
+            btn = QPushButton(text)
+            btn.setObjectName("LinkBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, u=url: webbrowser.open(u))
+            layout.addWidget(btn)
+
+        # Set initial active
+        self._set_active("workbench")
+
+    def _on_nav(self, page_id: str):
+        self._set_active(page_id)
+        self.nav_requested.emit(page_id)
+
+    def _set_active(self, page_id: str):
+        self._active_page = page_id
+        for pid, btn in self.nav_btns.items():
+            btn.setProperty("active", pid == page_id)
+            btn.setStyle(btn.style())
+
+
+# App state
+class AppState:
+    """Holds global mutable state shared across views."""
     def __init__(self):
-        # Initialize GUI
-        super().__init__()
-
-        # Get icon - works for both normal and frozen
-        relative_path="MEAlytics_logo.ico"
-        try:
-            self.base_path = sys._MEIPASS
-        except Exception:
-            source_path = Path(__file__).resolve()
-            self.base_path = source_path.parent
-        self.icon_path=os.path.join(self.base_path, relative_path)
-        try:
-            self.iconbitmap(self.icon_path)
-        except Exception as error:
-            print("Could not load in icon")
-            print(error)
-
-        # 'Global' variables
-        self.tooltipwraplength=200
-
-        # Colors
-        self.gray_1 = '#333333'
-        self.gray_2 = '#2b2b2b'
-        self.gray_3 = "#3f3f3f"
-        self.gray_4 = "#212121"
-        self.gray_5 = "#696969"
-        self.gray_6 = "#292929"
-        self.entry_gray = "#565b5e"
-        self.text_color = '#dce4ee'
-        self.selected_color = "#125722"     # Green color to show something is selected
-        self.unselected_color = "#570700"   # Red color to show somehting is not selected
-
-        # Set theme from json
-        theme_path=os.path.join(self.base_path, "theme.json")
-        
-        with open(theme_path, "r") as json_file:
-            self.theme = json.load(json_file)
-
-        ctk.set_default_color_theme(theme_path)
-        ctk.set_appearance_mode("dark")
-
-        base_color = self.theme["CTkButton"]["fg_color"][1]
-        self.primary_1 = self.mix_color(base_color, self.gray_6, factor=0.9)
-        self.primary_1 = self.adjust_color(self.primary_1, 1.5)
-
-        # Initialize main frame
-        self.home_frame=main_window
-        self.show_frame(self.home_frame)
-
-        # The parent holds all the analysis parameters in a dict, which are here initialized with the default values
         self.parameters = get_default_parameters()
         self.default_parameters = get_default_parameters()
 
-        print("Successfully launched MEAlytics GUI")
 
-    # Handle frame switching
-    def show_frame(self, frame_class, *args, **kwargs):
-        for widget in self.winfo_children():
-            widget.destroy()
-        frame = frame_class(self, *args, **kwargs)
-        frame.pack(expand=True, fill="both") 
+# Main Window
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("MEAlytics")
+        self.resize(1200, 760)
+        self.setMinimumSize(900, 600)
 
-    # Function to calculate the well grid
-    def calculate_well_grid(self, num_items):
-        """Calculate grid shape for displaying wells, contains preset for 24w plate"""
-        if num_items == 24:
-            return 6, 4
+        self.app_state = AppState()
 
-        min_difference = num_items
-        optimal_width = num_items
-        optimal_height = 1
-        for width in range(1, int(math.sqrt(num_items)) + 1):
-            if num_items % width == 0:
-                height = num_items // width
-                difference = abs(width - height)
-                if difference < min_difference:
-                    min_difference = difference
-                    optimal_width = width
-                    optimal_height = height
+        # Central widget
+        central = QWidget()
+        self.setCentralWidget(central)
+        root_layout = QHBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
-        # Height should always be the lowest value of the two
-        # Width is returned first, then height
-        return int(max(optimal_width, optimal_height)), int(min(optimal_width, optimal_height))
+        # Sidebar
+        self.sidebar = Sidebar(self.app_state)
+        self.sidebar.nav_requested.connect(self.switch_page)
+        root_layout.addWidget(self.sidebar)
 
-        # Function to calculate the electrode grid
-    def calculate_electrode_grid(self, num_items):
-        """Calculate grid shape for displaying electrodes, contains present for 12 and 16 electrode wells"""
-        if num_items == 12:
-            return np.array([   [False, True, True, False],
-                                [True, True, True, True],
-                                [True, True, True, True],
-                                [False, True, True, False]])
-        if num_items == 16:
-            return np.array([   [True, True, True, True],
-                                [True, True, True, True],
-                                [True, True, True, True],
-                                [True, True, True, True]])
+        # Page stack
+        self.stack = QStackedWidget()
+        root_layout.addWidget(self.stack, 1)
 
-        width, height = self.calculate_well_grid(num_items)
-        return np.ones(shape=(width, height))
+        # Build pages
+        self.workbench = WorkbenchView(self.app_state)
+        self.observatory = ObservatoryView(self.app_state)
+        self.utilities = UtilitiesView(self.app_state)
 
-    
-    def adjust_color(self, hex_color, factor):
-        hex_color = hex_color.lstrip('#')
-        r = int(hex_color[:2], 16)
-        g = int(hex_color[2:4], 16) 
-        b = int(hex_color[4:], 16)
-        
-        r = int(min(255, max(0, r * factor)))
-        g = int(min(255, max(0, g * factor)))
-        b = int(min(255, max(0, b * factor)))
-        
-        return f'#{r:02x}{g:02x}{b:02x}'
+        self.stack.addWidget(self.workbench)
+        self.stack.addWidget(self.observatory)
+        self.stack.addWidget(self.utilities)
 
-    def mix_color(self, hex_color1, hex_color2, factor):
-        # Convert hex colors to RGB
-        hex_color1 = hex_color1.lstrip('#')
-        hex_color2 = hex_color2.lstrip('#')
-        
-        # Original color RGB
-        r1 = int(hex_color1[:2], 16)
-        g1 = int(hex_color1[2:4], 16)
-        b1 = int(hex_color1[4:], 16)
-        
-        # Gray color RGB
-        r2 = int(hex_color2[:2], 16)
-        g2 = int(hex_color2[2:4], 16)
-        b2 = int(hex_color2[4:], 16)
-        
-        # Mix colors based on factor
-        r = int(r1 * (1-factor) + r2 * factor)
-        g = int(g1 * (1-factor) + g2 * factor)
-        b = int(b1 * (1-factor) + b2 * factor)
-        
-        return f'#{r:02x}{g:02x}{b:02x}'
+        self.parameters_page = ParameterFrame(self)
+        self.home_frame_class = "workbench"
 
-    def set_theme(self, base_color):
-        theme_path=os.path.join(self.base_path, "theme.json")
+        self.stack.addWidget(self.parameters_page)
 
-        with open(theme_path, "r") as json_file:
-            theme = json.load(json_file)
-        
-        # Edit all relevant widgets
-        theme["CTkButton"]["fg_color"]=["#3a7ebf", base_color]
-        theme["CTkButton"]["hover_color"]=["#325882", self.adjust_color(base_color, factor=0.6)]
+        self._page_index = {
+            "workbench":   0,
+            "observatory": 1,
+            "utilities":   2,
+            "parameters":  3,
+        }
 
-        theme["CTkCheckBox"]["fg_color"]=["#3a7ebf", base_color]
-        theme["CTkCheckBox"]["hover_color"]=["#325882", self.adjust_color(base_color, factor=0.6)]
+        self.stack.setCurrentIndex(0)
 
-        theme["CTkEntry"]["border_color"]=["#325882", self.mix_color(base_color, self.entry_gray, factor=0.8)]
+    def show_frame(self, target):
+        if target == "workbench" or target == self.home_frame_class:
+            self.switch_page("workbench")
 
-        theme["CTkComboBox"]["border_color"]=["#325882", self.mix_color(base_color, self.entry_gray, factor=0.5)]
-        theme["CTkComboBox"]["button_color"]=["#325882", base_color]
-        theme["CTkComboBox"]["button_hover_color"]=["#325882", self.mix_color(base_color, self.entry_gray, factor=0.5)]
+    def switch_page(self, page_id: str):
+        idx = self._page_index.get(page_id, 0)
+        self.stack.setCurrentIndex(idx)
+        self.sidebar._set_active(page_id)
 
-        theme["CTkOptionMenu"]["fg_color"]=["#325882", self.mix_color(base_color, self.entry_gray, factor=0.5)]
-        theme["CTkOptionMenu"]["button_color"]=["#325882", base_color]
-        theme["CTkOptionMenu"]["button_hover_color"]=["#325882", self.mix_color(base_color, self.entry_gray, factor=0.5)]
-        
-        theme["CTkSlider"]["button_color"]=[base_color, base_color]
-        theme["CTkSlider"]["button_hover_color"]=[self.adjust_color(base_color, factor=0.6), self.adjust_color(base_color, factor=0.6)]
-
-        # Tabview buttons
-        theme["CTkSegmentedButton"]["selected_color"]=["#3a7ebf", base_color]
-        theme["CTkSegmentedButton"]["selected_hover_color"]=["#325882", self.adjust_color(base_color, factor=0.6)]
-        
-        self.primary_1 = self.mix_color(base_color, self.gray_6, factor=0.9)
-        self.primary_1 = self.adjust_color(self.primary_1, 1.5)
-
-        with open(theme_path, 'w') as json_file:
-            json.dump(theme, json_file, indent=4)
-        ctk.set_default_color_theme(theme_path)
-
-        self.theme=theme
-        self.show_frame(self.home_frame)
-
-class main_window(ctk.CTkFrame):
-    """
-    Main window and landing page for the user.
-    Allows the user to switch to different frames to perform different tasks.
-    """
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.parent=parent
-
-        parent.title(f"MEAlytics - Version: {version('MEAlytics')}")
-
-        # Weights
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        # Frame for the sidebar buttons
-        sidebarframe=ctk.CTkFrame(self)
-        sidebarframe.grid(row=0, column=1, padx=5, pady=5, sticky='nesw')
-
-        # Switch themes
-        theme_switch = ctk.CTkButton(sidebarframe, text="Theme", command=self.colorpicker)
-        theme_switch.grid(row=0, column=0, sticky='nesw', pady=10, padx=10)
-        self.selected_color=parent.theme["CTkButton"]["fg_color"][1]
-
-        cureq_button=ctk.CTkButton(master=sidebarframe, text="CureQ project", command=lambda: webbrowser.open_new("https://cureq.nl/"))
-        cureq_button.grid(row=1, column=0, sticky='nesw', pady=10, padx=10)
-
-        pypi_button=ctk.CTkButton(master=sidebarframe, text="PyPI", command=lambda: webbrowser.open_new("https://pypi.org/project/MEAlytics/"))
-        pypi_button.grid(row=2, column=0, sticky='nesw', pady=10, padx=10)
-
-        github_button=ctk.CTkButton(master=sidebarframe, text="GitHub", command=lambda: webbrowser.open_new("https://github.com/CureQ/MEAlytics"))
-        github_button.grid(row=3, column=0, sticky='nesw', pady=10, padx=10)
-
-        github_button=ctk.CTkButton(master=sidebarframe, text="User Guide", command=lambda: webbrowser.open_new("https://cureq.github.io/MEAlytics/"))
-        github_button.grid(row=4, column=0, sticky='nesw', pady=10, padx=10)
-
-        # Main button frame
-        main_buttons_frame=ctk.CTkFrame(self)
-        main_buttons_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nesw')
-        main_buttons_frame.grid_columnconfigure(0, weight=1)
-        main_buttons_frame.grid_columnconfigure(1, weight=1)
-        main_buttons_frame.grid_rowconfigure(0, weight=1)
-        main_buttons_frame.grid_rowconfigure(1, weight=1)
-
-        # Go to parameter_frame
-        to_parameters_button=ctk.CTkButton(master=main_buttons_frame, text="Set Parameters", command=lambda: parent.show_frame(parameter_frame), height=90, width=160)
-        to_parameters_button.grid(row=0, column=0, sticky='nesw', pady=10, padx=10)
-
-        # View results
-        view_results_button=ctk.CTkButton(master=main_buttons_frame, text="View Results", command=lambda: parent.show_frame(select_folder_frame), height=90, width=160)
-        view_results_button.grid(row=1, column=0, sticky='nesw', pady=10, padx=10)
-
-        # Batch processing
-        batch_processing_button=ctk.CTkButton(master=main_buttons_frame, text="Batch Processing", command=lambda: parent.show_frame(batch_processing), height=90, width=160)
-        batch_processing_button.grid(row=1, column=1, sticky='nesw', pady=10, padx=10)
-
-        # single file processing
-        process_file_button=ctk.CTkButton(master=main_buttons_frame, text="Process single file", command=lambda: parent.show_frame(process_file_frame), height=90, width=160)
-        process_file_button.grid(row=0, column=1, sticky='nesw', pady=10, padx=10)
-
-        # Utility/plotting buttons
-        util_plot_button_frame=ctk.CTkFrame(master=self)
-        util_plot_button_frame.grid(row=1, column=0, columnspan=2, sticky='nesw', pady=5, padx=5)
-
-        compression_button=ctk.CTkButton(master=util_plot_button_frame, text="Compress/Rechunk Files", command=lambda: parent.show_frame(compress_files))
-        compression_button.grid(row=0, column=0, sticky='nesw', padx=10, pady=10)
-        
-        features_over_time_button=ctk.CTkButton(master=util_plot_button_frame, text="Plotting", command=lambda: parent.show_frame(plotting_window))
-        features_over_time_button.grid(row=0, column=1, sticky='nesw', padx=10, pady=10)
-
-        recalculate_features_button = ctk.CTkButton(master=util_plot_button_frame, text='Exclude Electrodes', command=lambda: parent.show_frame(recalculate_features_class))
-        recalculate_features_button.grid(row=0, column=2, pady=10, padx=10, sticky='nesw')
-
-        for i in range(3):
-            util_plot_button_frame.grid_rowconfigure(i, weight=1)
-
-    def colorpicker(self):
-        popup=ctk.CTkToplevel(self)
-        popup.title('Theme Selector')
-
-        try:
-            popup.after(250, lambda: popup.iconbitmap(os.path.join(self.parent.icon_path)))
-        except Exception as error:
-            print(error)
-        
-        def set_theme():
-            self.parent.set_theme(self.selected_color)
-            popup.destroy()
-            self.parent.show_frame(main_window)
-
-        def set_color(color):
-            self.selected_color=color
-
-        popup.grid_columnconfigure(0, weight=1)
-        popup.grid_rowconfigure(0, weight=1)
-        popup.grid_rowconfigure(1, weight=1)
-        colorpicker = CTkColorPicker(popup, width=350, command=lambda e: set_color(e), initial_color=self.selected_color)
-        colorpicker.grid(row=0, column=0, sticky='nesw', padx=5, pady=5)
-        confirm_button=ctk.CTkButton(master=popup, text="Confirm", command=set_theme)
-        confirm_button.grid(row=1, column=0, sticky='nesw', padx=5, pady=5)
-
-@gui_logger()
+# Entry point
 def MEA_GUI():
-    """
-    Launches the graphical user interface (GUI) of MEAlytics.
+    app = QApplication(sys.argv)
+    app.setStyleSheet(STYLESHEET)
 
-    Always launch the function with an "if __name__ == '__main__':" guard as follows:
-        if __name__ == "__main__":
-            MEA_GUI()
-    """
-
-    app = MainApp()
-    app.mainloop()
-
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     MEA_GUI()

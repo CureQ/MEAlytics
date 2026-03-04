@@ -9,11 +9,15 @@ import os
 import copy
 from importlib.metadata import version
 from pathlib import Path
+import sys
+import logging
+import threading
 
 # External libraries
 import numpy as np
 import pandas as pd
 import h5py
+from PyQt6.QtCore import QObject, pyqtSignal
 
 # Package imorts
 from MEAlytics.core._bandpass import butter_bandpass_filter
@@ -61,6 +65,60 @@ def get_default_parameters():
     }
 
     return parameters
+
+class QtStream:
+    """Redirect sys.stdout so that print() calls inside analyse_wells emit a Qt signal."""
+    def __init__(self, signal):
+        self._signal = signal
+
+    def write(self, text):
+        text = text.strip()
+        if text:
+            self._signal.emit(text)
+
+    def flush(self):
+        pass
+
+
+class AnalysisWorker(QObject):
+    """
+    Runs analyse_wells in a worker thread.
+    """
+    progress_updated = pyqtSignal(int, int)
+    log_message      = pyqtSignal(str)
+    finished         = pyqtSignal(bool)
+
+    def __init__(self, filepath, sampling_rate, electrode_amnt, parameters):
+        super().__init__()
+        self.filepath       = filepath
+        self.sampling_rate  = sampling_rate
+        self.electrode_amnt = electrode_amnt
+        self.parameters     = parameters
+        self._stop_event    = threading.Event()
+
+    def request_stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        original_stdout = sys.stdout
+        sys.stdout = QtStream(self.log_message)
+        success = False
+        try:
+            analyse_wells(
+                fileadress      = self.filepath,
+                sampling_rate   = self.sampling_rate,
+                electrode_amnt  = self.electrode_amnt,
+                parameters      = self.parameters,
+                progress_signal = self.progress_updated,
+                stop_event      = self._stop_event,
+            )
+            success = not self._stop_event.is_set()
+        except Exception as e:
+            self.log_message.emit(f"[ERROR] {e}")
+            success = False
+        finally:
+            sys.stdout = original_stdout
+            self.finished.emit(success)
 
 def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
     """
@@ -110,7 +168,7 @@ def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
     existing_shm.close()
     print(f"Processed electrode: {electrode}")
 
-def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
+def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}, progress_signal=None, stop_event=None):
     """
     Analyse an entire MEA experiment, main function of the library.
 
@@ -159,7 +217,7 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
     analysis_time=time.time()
 
     lib_version=version('MEAlytics')
-    print(f"MEA Analysis Tool - Version: {lib_version}")
+    print(f"MEAlytics - Version: {lib_version}")
     print(f"Analyzing: {fileadress}")
     
     path_obj = Path(fileadress)
@@ -174,9 +232,13 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
     outputpath=os.path.join(parent_dir, output_folder)
     os.makedirs(outputpath)
 
-    # Create a file to commmunicate the progress with the GUI
-    progressfile=f'{os.path.split(fileadress)[0]}/progress.npy'
-    np.save(progressfile, ['starting'])
+    # Helper functions
+    def _emit_progress(current, total):
+        if progress_signal is not None:
+            progress_signal.emit(int(current), int(total))
+
+    def _should_stop():
+        return stop_event is not None and stop_event.is_set()
     
     # Call the freeze_support function to make sure multiprocessing still works properly if the algorithm is frozen
     multiprocessing.freeze_support()
@@ -204,7 +266,7 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
             
         if rechunk_data:
             print("Data is not correctly chunked yet.\nRechunking the data will allow the tool to quickly analyze large files on limited amount of RAM")
-            np.save(progressfile, ['rechunking'])
+            _emit_progress(0, 1)
             fileadress=rechunk_dataset(fileadress=fileadress, compression_method='lzf')
 
     # Create figures folder for output
@@ -257,7 +319,7 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
             measurements=dataset.shape[1]
         sharedmemory=SharedMemory(create=True, size=np_size)
         # Communicate file size with GUI
-        np.save(progressfile, [(0)*electrode_amnt, datashape[0]])
+        _emit_progress(0, datashape[0])
         # Create a np array in the shared memory
         data_shared=np.ndarray(shape, dtype=_type, buffer=sharedmemory.buf)
         # Get the memory ID
@@ -309,9 +371,7 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
                 print(f"It took {end-start} seconds to analyse well: {well}")
 
                 # Check if the user wants to exit the analysis
-                progressdata=np.load(progressfile)
-                if progressdata[0]=="abort":
-                    # Clean up the shared memory
+                if _should_stop():
                     sharedmemory.close()
                     sharedmemory.unlink()
                     pool.terminate()
@@ -319,12 +379,10 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
                     data=None
                     del data
                     gc.collect()
-                    np.save(progressfile, ["stopped"])
-                    print("stopped analysis")
+                    print("Analysis aborted by user")
                     return
-                
-                # Communicate progression with GUI
-                np.save(progressfile, [(well)*electrode_amnt, datashape[0]])
+
+                _emit_progress(well * electrode_amnt, datashape[0])
 
         # Clean up the shared memory
         sharedmemory.close()
@@ -363,18 +421,16 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
                 burst_detection(data, electrode, parameters)
                 
                 # Check if the user wants to exit the analysis
-                progressdata=np.load(progressfile)
-                if progressdata[0]=="abort":
+                if _should_stop():
                     data=None
                     del data
                     gc.collect()
-                    np.save(progressfile, ["stopped"])
-                    print("stopped analysis")
+                    print("Analysis aborted by user")
                     return
 
-                # Communicate with GUI
-                np.save(progressfile, [electrode+1, datashape[0]])
+                _emit_progress(electrode + 1, datashape[0])
                 print(f"Processed electrode: {electrode}")
+
             measurements=datashape[1]
 
             # Detect network bursts
@@ -412,7 +468,6 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}):
     electrode_pair_features_df.to_csv(f"{outputpath}/{output_folder}_Synchronicity.csv", index=False)
     
     # Close the analysis
-    np.save(progressfile, ['done'])
     print(f"It took {time.time()-analysis_time} seconds to analyse {fileadress}")
     print("Done")
     return output
