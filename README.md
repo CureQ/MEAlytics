@@ -5,6 +5,8 @@
 MEAlytics is an open-source Python tool for processing Microelectrode Array (MEA) data.<br>
 This repository is maintained by the Amsterdam University of Applied Sciences (AUAS).<br>
 
+![](https://github.com/user-attachments/assets/c8183761-5aa5-45fa-985a-2332cf8d5415)
+
 #### [For more information on functionality and usage, please refer to the documentation](https://cureq.github.io/MEAlytics/)
 
 ## CureQ
@@ -86,8 +88,9 @@ When you have installed MEAlytics using the [Windows installer](https://github.c
 ## MEAlytics functionality
 This section showcases the basic functionality of MEAlytics, for more information, refer to [the documentation.](https://cureq.github.io/MEAlytics/)
 
-### Multiprocessing
-MEAlytics optionally utilizes **multiprocessing** to significantly speed up the analysis when resources are available!
+### File Analysis
+MEAlytics allows for easy batch processing of files.<br>
+Optionally, MEAlytics optionally utilizes **multiprocessing** to significantly speed up the analysis when resources are available!
 
 ![](./Example_visualisations/process.png)
 
@@ -113,12 +116,6 @@ Burst detection is performed using the logISI method, meaning that the threshold
 Network burst detection is performed by looking for high activity bursting periods on multiple channels.
 
 ![Network burst detection](./Example_visualisations/network_burst_detection.png)
-
-### Batch processing
-
-Perform high-throughput analysis using the batch processing module!
-
-![Batch processing](./Example_visualisations/batch_processing2.png)
 
 ### Features
 
