@@ -3,7 +3,8 @@ import json
 import os
 
 import h5py
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.backends.backend_qt import NavigationToolbar2QT
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -25,7 +26,7 @@ from MEAlytics.core._bandpass import butter_bandpass_filter
 from MEAlytics.core._burst_detection import burst_detection
 from MEAlytics.core._spike_validation import spike_validation
 from MEAlytics.core._threshold import fast_threshold
-from MEAlytics.GUI._helpers import _get_float, _get_int, _set_entry
+from MEAlytics.GUI._helpers import _get_float, _get_int, _set_entry, _show_error
 from MEAlytics.GUI._theme import (
     DARK_BG,
     TEXT_PRIMARY,
@@ -73,9 +74,9 @@ def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
 
 class SingleElectrodeView(QDialog):
     def __init__(
-        self, folder: str, rawfile: str, well: int, electrode: int, parent=None
+        self, folder: str, rawfile: str, well: int, electrode: int
     ):
-        super().__init__(parent)
+        super().__init__()
         self.setWindowTitle(f"Well: {well} - Electrode: {electrode}")
         self.resize(1280, 860)
         self.setMinimumSize(900, 600)
@@ -157,11 +158,11 @@ class SingleElectrodeView(QDialog):
         val_group.setLayout(val_layout)
 
         def _lbl(text):
-            l = QLabel(text)
-            l.setStyleSheet(
+            label = QLabel(text)
+            label.setStyleSheet(
                 f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent"
             )
-            return l
+            return label
 
         val_layout.addWidget(_lbl("Spike validation method:"), 0, 0)
         self._validation_combo = QComboBox()
@@ -188,7 +189,7 @@ class SingleElectrodeView(QDialog):
         plot_rect_lbl = _lbl("Plot validation rectangles:")
         plot_rect_lbl.setToolTip(
             "Display the rectangles used to validate the spikes.\n"
-            "Warning: computationally expensive — may take a while."
+            "Warning: computationally expensive - may take a while."
         )
         val_layout.addWidget(plot_rect_lbl, 3, 0)
         self._plot_rectangle_cb = QCheckBox()
@@ -245,11 +246,11 @@ class SingleElectrodeView(QDialog):
         burst_group.setLayout(burst_layout)
 
         def _lbl(text):
-            l = QLabel(text)
-            l.setStyleSheet(
+            label = QLabel(text)
+            label.setStyleSheet(
                 f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent"
             )
-            return l
+            return label
 
         burst_layout.addWidget(_lbl("Minimal amount of spikes:"), 0, 0)
         self._minspikes_entry = QLineEdit()
@@ -335,23 +336,37 @@ class SingleElectrodeView(QDialog):
 
     def _update_spike_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["low cutoff"] = _get_int(self._lowcut_entry)
-        temp["high cutoff"] = _get_int(self._highcut_entry)
-        temp["order"] = _get_int(self._order_entry)
-        temp["standard deviation multiplier"] = _get_float(self._stdev_entry)
-        temp["rms multiplier"] = _get_float(self._rms_entry)
-        temp["threshold portion"] = _get_float(self._thpn_entry)
-        temp["refractory period"] = _get_float(self._rfpd_entry)
 
-        if self._validation_combo.currentText() == "none":
-            temp["drop amplitude"] = 0
-        else:
-            temp["exit time"] = _get_float(self._exittime_entry)
-            temp["drop amplitude"] = _get_float(self._dropamplitude_entry)
-            temp["max drop"] = _get_float(self._maxdrop_entry)
+        try:
+            temp["low cutoff"] = _get_int(self._lowcut_entry)
+            temp["high cutoff"] = _get_int(self._highcut_entry)
+            temp["order"] = _get_int(self._order_entry)
+            temp["standard deviation multiplier"] = _get_float(self._stdev_entry)
+            temp["rms multiplier"] = _get_float(self._rms_entry)
+            temp["threshold portion"] = _get_float(self._thpn_entry)
+            temp["refractory period"] = _get_float(self._rfpd_entry)
+
+            if self._validation_combo.currentText() == "none":
+                temp["drop amplitude"] = 0
+            else:
+                temp["exit time"] = _get_float(self._exittime_entry)
+                temp["drop amplitude"] = _get_float(self._dropamplitude_entry)
+                temp["max drop"] = _get_float(self._maxdrop_entry)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}",
+            )
 
         temp["output path"] = self.folder
-        self._plot_single_electrode(temp)
+
+        try:
+            self._plot_single_electrode(temp)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Something went wrong while creating the plot.\n\nError: {e}",
+            )
 
     def _plot_single_electrode(self, parameters: dict) -> None:
         with h5py.File(self.rawfile, "r") as hf:
@@ -389,12 +404,27 @@ class SingleElectrodeView(QDialog):
 
     def _update_burst_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["minimal amount of spikes"] = _get_int(self._minspikes_entry)
-        temp["default interval threshold"] = _get_float(self._def_iv_entry)
-        temp["max interval threshold"] = _get_float(self._max_iv_entry)
-        temp["burst detection kde bandwidth"] = _get_float(self._kde_bw_entry)
+
+        try:
+            temp["minimal amount of spikes"] = _get_int(self._minspikes_entry)
+            temp["default interval threshold"] = _get_float(self._def_iv_entry)
+            temp["max interval threshold"] = _get_float(self._max_iv_entry)
+            temp["burst detection kde bandwidth"] = _get_float(self._kde_bw_entry)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}",
+            )
+
         temp["output path"] = self.folder
-        self._plot_burst_detection(temp)
+
+        try:
+            self._plot_burst_detection(temp)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Something went wrong while creating the plot.\n\nError: {e}",
+            )
 
     def _plot_burst_detection(self, parameters: dict) -> None:
         with h5py.File(self.rawfile, "r") as hf:

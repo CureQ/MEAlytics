@@ -3,7 +3,7 @@ import os
 import sys
 
 import numpy as np
-from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QLineEdit, QMessageBox
 
 
 def _well_grid(num_items: int) -> tuple[int, int]:
@@ -56,3 +56,11 @@ def _adjust_color(hex_color: str, factor: float) -> str:
 def resource_path(relative: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, relative)
+
+
+def _show_error(self, message: str) -> None:
+    dlg = QMessageBox(self)
+    dlg.setIcon(QMessageBox.Icon.Critical)
+    dlg.setWindowTitle("Error")
+    dlg.setText(message)
+    dlg.exec()

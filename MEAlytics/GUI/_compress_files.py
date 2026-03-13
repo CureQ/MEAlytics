@@ -23,12 +23,9 @@ from PyQt6.QtWidgets import (
 
 from MEAlytics.core._utilities import rechunk_dataset
 from MEAlytics.GUI._theme import (
-    ACCENT,
-    BORDER_COLOR,
     DANGER,
     STYLESHEET,
     SUCCESS,
-    SURFACE_3,
     TEXT_MUTED,
     TEXT_SECONDARY,
     WARNING,
@@ -42,8 +39,8 @@ class CompressWindow(QMainWindow):
     _file_finished = pyqtSignal(str, bool)
     _compression_done = pyqtSignal(list, list)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        super().__init__()
         self.setWindowTitle("MEAlytics — Rechunk / Compress")
         self.resize(680, 520)
         self.setMinimumSize(520, 420)
@@ -68,7 +65,7 @@ class CompressWindow(QMainWindow):
 
     def _build_settings_panel(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(260)
+        panel.setFixedWidth(300)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
@@ -140,30 +137,7 @@ class CompressWindow(QMainWindow):
         self._gzip_slider.setValue(1)
         self._gzip_slider.setTickInterval(1)
         self._gzip_slider.setEnabled(False)
-        self._gzip_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                background: {SURFACE_3};
-                height: 4px;
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {ACCENT};
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
-            }}
-            QSlider::handle:horizontal:disabled {{
-                background: {BORDER_COLOR};
-            }}d
-            QSlider::sub-page:horizontal {{
-                background: {ACCENT};
-                border-radius: 2px;
-            }}
-            QSlider::sub-page:horizontal:disabled {{
-                background: {BORDER_COLOR};
-            }}
-        """)
+
         self._gzip_slider.valueChanged.connect(
             lambda v: self._gzip_level_lbl.setText(str(v))
         )
@@ -317,7 +291,7 @@ class CompressWindow(QMainWindow):
 
     def _on_file_finished(self, filepath: str, success: bool):
         name = Path(filepath).name
-        lbl = QLabel(f"{'✔' if success else '✘'}  {name}")
+        lbl = QLabel(f"{name}")
         lbl.setStyleSheet(f"color: {SUCCESS if success else DANGER}; font-size: 12px;")
         lbl.setToolTip(filepath)
         lbl.setWordWrap(True)

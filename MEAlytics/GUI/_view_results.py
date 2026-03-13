@@ -37,7 +37,7 @@ from MEAlytics.GUI._theme import (
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
-    WARNING,
+    WARN_LAYOUT_BUTTON_STYLESHEET,
     make_divider,
     make_label,
 )
@@ -395,20 +395,7 @@ class ViewResultsView(QWidget):
             "The well/electrode layout is auto-generated and may not match the physical plate exactly. Click here for details."
         )
         warn_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        warn_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {WARNING};
-                border: none;
-                font-size: 11px;
-                text-align: left;
-                padding: 0px;
-            }}
-            QPushButton:hover {{
-                color: {TEXT_PRIMARY};
-                text-decoration: underline;
-            }}
-        """)
+        warn_btn.setStyleSheet(WARN_LAYOUT_BUTTON_STYLESHEET)
         warn_btn.clicked.connect(
             lambda: webbrowser.open(
                 "https://cureq.github.io/MEAlytics/supported_plates/"
@@ -503,7 +490,6 @@ class ViewResultsView(QWidget):
         self._sev_well_label.setText(f"Well {well} selected")
 
     def _open_single_electrode_window(self, electrode: int):
-        title = f"MEAlytics — Well {self._selected_well} · Electrode {electrode}"
         dlg = SingleElectrodeView(
             self._folder, self._rawfile, self._selected_well, electrode
         )
@@ -555,13 +541,15 @@ class ViewResultsView(QWidget):
         desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
         layout.addWidget(desc)
 
-        gen_btn = QPushButton("⬡  Generate Heatmap")
+        gen_btn = QPushButton("Generate Heatmap")
         gen_btn.setObjectName("PrimaryBtn")
         gen_btn.setFixedWidth(220)
         gen_btn.setMinimumHeight(44)
         gen_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         gen_btn.clicked.connect(self._open_heatmap_window)
         layout.addWidget(gen_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        layout.addStretch(1)
 
         return tab
 

@@ -185,7 +185,7 @@ class ParameterFrame(QWidget):
 
         # Network Burst Detection
         n_group = self._make_group("Network Burst")
-        self._add_input(n_group, "Min channels (0–1):", "min channels", 1)
+        self._add_input(n_group, "Min channels:", "min channels", 1)
         n_group.layout().addWidget(self._field_label("Threshold method:"), 2, 0)
         self.nw_method = QComboBox()
         self.nw_method.addItems(
@@ -289,7 +289,7 @@ class ParameterFrame(QWidget):
             self, "Open Parameter File", "", "JSON Files (*.json)"
         )
         if path:
-            with open(path, "r") as f:
+            with open(path) as f:
                 data = json.load(f)
             self.load_parameters(data)
 

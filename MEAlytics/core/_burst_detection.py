@@ -6,6 +6,13 @@ import numpy as np
 import seaborn as sns
 from matplotlib.figure import Figure
 
+from MEAlytics.GUI._theme import (
+    burst_color,
+    burst_spike_color,
+    raw_data_color,
+    spike_color,
+)
+
 
 def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata=True):
     """
@@ -36,10 +43,6 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
     Instead of returning the results of the burst detection using 'return', the function saves them at a specific file location using h5 files.
 
     """
-
-    # Colors
-    rawdatacolor = "#bb86fc"
-    burstcolor = "#cf6679"
 
     electrode_number = electrode
     fig = None
@@ -373,7 +376,7 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
 
             # Plot the raw voltage signal
             rawburstplot.plot(
-                time_seconds, data, linewidth=0.5, zorder=-1, color=rawdatacolor
+                time_seconds, data, linewidth=0.5, zorder=-1, color=raw_data_color
             )
 
             # Plot the bursts
@@ -383,7 +386,7 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
                 rawburstplot.plot(
                     time_seconds[burst_startx:burst_endx],
                     data[burst_startx:burst_endx],
-                    color=burstcolor,
+                    color=burst_color,
                     linewidth=0.5,
                     alpha=1,
                 )
@@ -396,7 +399,7 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
             rawburstplot.scatter(
                 time_seconds[spikes],
                 data[spikes],
-                color="green",
+                color=spike_color,
                 marker="o",
                 s=3,
                 zorder=1,
@@ -408,7 +411,7 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
                 rawburstplot.scatter(
                     burst_spikes[:, 0],
                     burst_spikes[:, 1],
-                    color="blue",
+                    color=burst_spike_color,
                     marker="o",
                     s=3,
                     zorder=2,

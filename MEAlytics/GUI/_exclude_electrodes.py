@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import webbrowser
 from functools import partial
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from MEAlytics.GUI._theme import (
     SURFACE_3,
     TEXT_MUTED,
     TEXT_SECONDARY,
+    WARN_LAYOUT_BUTTON_STYLESHEET,
     WARNING,
     make_divider,
     make_label,
@@ -80,9 +82,9 @@ _FILE_DESELECTED_STYLE = f"""
 
 
 class _ConfigThumbnail(QWidget):
-    _CELL = 6  # px per electrode square
-    _GAP = 3  # px gap between wells
-    _MARGIN = 4  # px outer margin
+    _CELL = 6
+    _GAP = 3
+    _MARGIN = 4
 
     def __init__(self):
         super().__init__()
@@ -239,6 +241,18 @@ class EditConfigurationDialog(QDialog):
         gc.setContentsMargins(16, 14, 16, 14)
         gc.setSpacing(10)
         gc.addWidget(make_label("Electrode Layout", "SectionLabel"))
+
+        warn_btn = QPushButton(
+            "The well/electrode layout is auto-generated and may not match the physical plate exactly. Click here for details."
+        )
+        warn_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        warn_btn.setStyleSheet(WARN_LAYOUT_BUTTON_STYLESHEET)
+        warn_btn.clicked.connect(
+            lambda: webbrowser.open(
+                "https://cureq.github.io/MEAlytics/supported_plates/"
+            )
+        )
+        gc.addWidget(warn_btn)
         gc.addWidget(make_divider())
 
         scroll = QScrollArea()
@@ -662,7 +676,7 @@ class ExcludeElectrodesWindow(QMainWindow):
                     f"{n_excluded} electrode{'s' if n_excluded != 1 else ''} excluded"
                 )
                 self._config_status.setStyleSheet(
-                    f"color: {WARNING if n_excluded > 0 else SUCCESS}; font-size: 11px;"
+                    f"color: {WARNING if n_excluded > 0 else SUCCESS}; font-size: 11px; background: transparent"
                 )
                 self._thumbnail.set_config(
                     config, self._well_amnt, self._electrode_amnt

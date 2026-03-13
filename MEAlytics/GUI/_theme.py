@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QSizePolicy
 
+# GUI colors
 # Default
 DARK_BG = "#0f1117"
 SURFACE_1 = "#161b27"
@@ -48,6 +49,13 @@ TEXT_MUTED = "#4a5568"
 # TEXT_PRIMARY  = "#0f172a"
 # TEXT_SECONDARY= "#475569"
 # TEXT_MUTED    = "#94a3b8"
+
+# Plot colors
+raw_data_color = "#bb86fc"  # raw data trace
+burst_color = "#a8273e"  # raw data inside a single channel burst trace
+burst_spike_color = "#AF4949"  # detected spike inside a single channel burst
+spike_color = "green"  # Detected spike
+rejected_spike_color = "red"  # Rejected spike
 
 STYLESHEET = f"""
 /* ── Global ── */
@@ -321,6 +329,7 @@ QGroupBox::title {{
 QCheckBox {{
     color: {TEXT_PRIMARY};
     spacing: 8px;
+    background: transparent
 }}
 QCheckBox::indicator {{
     width: 16px;
@@ -412,6 +421,31 @@ QTabBar::tab:hover:!selected {{
     background-color: {SURFACE_3};
     color: {TEXT_PRIMARY};
 }}
+QSlider {{
+    background: transparent;
+}}
+QSlider::groove:horizontal {{
+    background: {SURFACE_3};
+    height: 4px;
+    border-radius: 2px;
+}}
+QSlider::handle:horizontal {{
+    background: {ACCENT};
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+}}
+QSlider::handle:horizontal:disabled {{
+    background: {BORDER_COLOR};
+}}d
+QSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border-radius: 2px;
+}}
+QSlider::sub-page:horizontal:disabled {{
+    background: {BORDER_COLOR};
+}}
 """
 
 TOOLBAR_STYLESHEET = f"""
@@ -442,23 +476,6 @@ QToolButton:checked {{
 QLabel {{
     color: {TEXT_SECONDARY};
     font-size: 12px;
-}}
-QSlider::groove:horizontal {{
-    height: 4px;
-    background: {SURFACE_3};
-    border-radius: 2px;
-}}
-QSlider::handle:horizontal {{
-    background: {ACCENT};
-    border: none;
-    width: 14px;
-    height: 14px;
-    margin: -5px 0;
-    border-radius: 7px;
-}}
-QSlider::sub-page:horizontal {{
-    background: {ACCENT};
-    border-radius: 2px;
 }}
 """
 
@@ -491,6 +508,21 @@ _BTN_STYLE_SELECTED = f"""
         background-color: {ACCENT_MUTED};
         border-color: {ACCENT};
         color: {ACCENT};
+    }}
+"""
+
+WARN_LAYOUT_BUTTON_STYLESHEET = f"""
+    QPushButton {{
+        background-color: transparent;
+        color: {WARNING};
+        border: none;
+        font-size: 11px;
+        text-align: left;
+        padding: 0px;
+    }}
+    QPushButton:hover {{
+        color: {TEXT_PRIMARY};
+        text-decoration: underline;
     }}
 """
 

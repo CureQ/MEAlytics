@@ -28,11 +28,7 @@ dependencies = [
     "statsmodels>=0.14.0",
     "scikit-image>=0.22.0", 
     "KDEpy>=1.1.9",
-    "customtkinter>=5.2.2",
-    "CTkToolTip>=0.8",
-    "CTkMessagebox>=2.7",
-    "CTkColorPicker>=0.9.0",
-    "requests>=2.32.3",
+    "pyqt6>=6.10.2",
     "pyshortcuts>=1.9.5",
 ]
 
@@ -51,3 +47,15 @@ MEAlytics = [
     "GUI/MEAlytics_logo.ico",
     "GUI/theme.json",
 ]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "UP"
+]
+
+[tool.ruff.format]
+quote-style = "double"

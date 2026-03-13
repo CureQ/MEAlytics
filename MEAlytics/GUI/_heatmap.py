@@ -3,7 +3,7 @@ import webbrowser
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
@@ -25,10 +25,9 @@ from MEAlytics.core._heatmap import (
     make_hm_img,
 )
 from MEAlytics.GUI._theme import (
-    SURFACE_2,
     TEXT_MUTED,
     TEXT_PRIMARY,
-    WARNING,
+    WARN_LAYOUT_BUTTON_STYLESHEET,
     make_primary_btn,
     make_secondary_btn,
 )
@@ -197,11 +196,7 @@ class HeatmapFrame(QDialog):
             "the physical plate exactly. Click here for details."
         )
         warn_btn.setObjectName("SecondaryBtn")
-        warn_btn.setStyleSheet(
-            f"background-color: {SURFACE_2}; color: {WARNING}; "
-            f"border: 1px solid {WARNING}; border-radius: 8px; "
-            f"padding: 7px 12px; font-size: 12px; text-align: left;"
-        )
+        warn_btn.setStyleSheet(WARN_LAYOUT_BUTTON_STYLESHEET)
         warn_btn.clicked.connect(
             lambda: webbrowser.open_new(
                 "https://cureq.github.io/MEAlytics/supported_plates/"

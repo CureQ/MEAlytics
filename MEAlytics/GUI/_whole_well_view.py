@@ -2,7 +2,8 @@ import copy
 import json
 import os
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.backends.backend_qt import NavigationToolbar2QT
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -21,7 +22,7 @@ from PyQt6.QtWidgets import (
 
 from MEAlytics.core._network_burst_detection import network_burst_detection
 from MEAlytics.core._plotting import well_electrodes_kde
-from MEAlytics.GUI._helpers import _get_float, _set_entry
+from MEAlytics.GUI._helpers import _get_float, _set_entry, _show_error
 from MEAlytics.GUI._theme import (
     DARK_BG,
     TEXT_PRIMARY,
@@ -87,13 +88,13 @@ class WholeWellView(QDialog):
         nbd_group.setLayout(nbd_layout)
 
         def _lbl(text):
-            l = QLabel(text)
-            l.setStyleSheet(
+            label = QLabel(text)
+            label.setStyleSheet(
                 f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent"
             )
-            return l
+            return label
 
-        nbd_layout.addWidget(_lbl("Min channels (%):"), 0, 0)
+        nbd_layout.addWidget(_lbl("Min channels:"), 0, 0)
         self._min_channels_entry = QLineEdit()
         nbd_layout.addWidget(self._min_channels_entry, 0, 1)
 
@@ -197,11 +198,26 @@ class WholeWellView(QDialog):
 
     def _update_nbd_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["min channels"] = _get_float(self._min_channels_entry)
-        temp["thresholding method"] = self._th_method_combo.currentText()
-        temp["nbd kde bandwidth"] = _get_float(self._nbd_kde_bw_entry)
+
+        try:
+            temp["min channels"] = _get_float(self._min_channels_entry)
+            temp["thresholding method"] = self._th_method_combo.currentText()
+            temp["nbd kde bandwidth"] = _get_float(self._nbd_kde_bw_entry)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}",
+            )
+
         temp["output path"] = self.folder
-        self._plot_network_bursts(temp)
+
+        try:
+            self._plot_network_bursts(temp)
+        except Exception as e:
+            _show_error(
+                self,
+                f"Something went wrong while creating the plot.\n\nError: {e}",
+            )
 
     def _plot_network_bursts(self, parameters: dict) -> None:
         fig = network_burst_detection(
@@ -221,7 +237,13 @@ class WholeWellView(QDialog):
         self._update_activity_plot()
 
     def _update_activity_plot(self) -> None:
-        self._plot_well_activity()
+        try:
+            self._plot_well_activity()
+        except Exception as e:
+            _show_error(
+                self,
+                f"Something went wrong while creating the plot.\n\nError: {e}",
+            )
 
     def _plot_well_activity(self) -> None:
         fig = well_electrodes_kde(

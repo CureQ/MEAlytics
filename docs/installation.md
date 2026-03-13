@@ -5,11 +5,11 @@ MEAlytics also provides a Windows installer, which provides the simplest way of 
 For the installer, the package is bundled into an executable using PyInstaller, and turned into an installer using Inno Setup.
 
 # Installing Python
-A Python interpreter is required to run MEAlytics, the interpreter using the official python installer. All python versions can be found on [https://www.python.org/downloads/](https://www.python.org/downloads/). MEAlytics has been developed and tested on python 3.11, but will most likely also work on other python 3.8+ versions.<br>
+A Python interpreter is required to run MEAlytics, the interpreter using the official python installer. All python versions can be found on [https://www.python.org/downloads/](https://www.python.org/downloads/). MEAlytics has been developed and tested on python 3.14, but will most likely also work on other python 3.8+ versions.<br>
 There are plenty of guide available for this process online, to check if your installation was succesful, you can run:
 ```console
 C:\>python --version
-Python 3.11.9
+Python 3.14.0
 
 C:\>pip --version
 pip 23.3.1

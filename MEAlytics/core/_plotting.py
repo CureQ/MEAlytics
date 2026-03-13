@@ -263,7 +263,7 @@ def combined_feature_boxplots(
 
     for root, dirs, files in os.walk(folder):
         for file in files:
-            if file.endswith("Features.csv"):
+            if file.endswith("Features.csv") and "Electrode" not in file:
                 featurefiles.append(os.path.join(root, file))
                 print(os.path.join(root, file))
 
@@ -352,7 +352,7 @@ def features_over_time(
     def sort_filenames_by_number(filenames, prefix):
         sorted_filenames = []
         for filename in filenames:
-            match = re.search(f"{prefix}(\d+)", filename)
+            match = re.search(rf"{prefix}(\d+)", filename)
             if match:
                 num_value = int(match.group(1))
                 sorted_filenames.append((num_value, filename))
@@ -417,11 +417,9 @@ def features_over_time(
                     for dataframe in range(len(sorted_dataframes)):
                         if sorted_dataframes[dataframe][0] == num:
                             temp_data.append(
-                                (
-                                    sorted_dataframes[dataframe][1][features[i]][
-                                        labels[key]
-                                    ]
-                                )
+                                sorted_dataframes[dataframe][1][features[i]][
+                                    labels[key]
+                                ]
                             )
                             found += 1
                     temp_data = np.array(temp_data)

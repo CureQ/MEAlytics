@@ -40,7 +40,7 @@ from MEAlytics.GUI._theme import (
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
-    WARNING,
+    WARN_LAYOUT_BUTTON_STYLESHEET,
     make_divider,
     make_label,
 )
@@ -66,8 +66,8 @@ def _colored_btn_style(fg: str) -> str:
 
 
 class PlottingWindow(QMainWindow):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        super().__init__()
         self.setWindowTitle("MEAlytics — Plotting")
         self.resize(1100, 720)
         self.setMinimumSize(860, 560)
@@ -203,22 +203,11 @@ class PlottingWindow(QMainWindow):
         header = QHBoxLayout()
         header.addWidget(make_label("Assign Wells", "SectionLabel"))
         header.addStretch()
-        warn_btn = QPushButton("Layout is auto-generated. Click for details.")
+        warn_btn = QPushButton(
+            "The well/electrode layout is auto-generated and may not match the physical plate exactly. Click here for details."
+        )
         warn_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        warn_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {WARNING};
-                border: none;
-                font-size: 11px;
-                text-align: left;
-                padding: 0px;
-            }}
-            QPushButton:hover {{
-                color: {TEXT_PRIMARY};
-                text-decoration: underline;
-            }}
-        """)
+        warn_btn.setStyleSheet(WARN_LAYOUT_BUTTON_STYLESHEET)
         warn_btn.clicked.connect(
             lambda: webbrowser.open(
                 "https://cureq.github.io/MEAlytics/supported_plates"
@@ -406,7 +395,9 @@ class PlottingWindow(QMainWindow):
 
         self._folder_path_lbl.setText(Path(folder).name)
         self._folder_path_lbl.setToolTip(folder)
-        self._folder_path_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        self._folder_path_lbl.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 12px; background: transparent"
+        )
         n = len(file_names)
         self._file_count_lbl.setText(f"{n} experiment{'s' if n != 1 else ''}")
         self._file_count_lbl.setVisible(True)

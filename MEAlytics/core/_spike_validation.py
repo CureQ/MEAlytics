@@ -6,6 +6,12 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
+from MEAlytics.GUI._theme import (
+    raw_data_color,
+    rejected_spike_color,
+    spike_color,
+)
+
 
 def spike_validation(
     data,
@@ -45,9 +51,6 @@ def spike_validation(
     -----
     Instead of returning the results of the spike detection using 'return', the function saves them at a specific file location using h5 files.
     """
-
-    # Colors for matplotlib figure
-    rawdatacolor = "#bb86fc"
 
     """Spike detection - detect spikes using the threshold and refractory period"""
     i = electrode
@@ -180,7 +183,7 @@ def spike_validation(
 
         # Plot raw data
         rawdataplot.plot(
-            time_seconds, data, linewidth=0.5, zorder=-1, color=rawdatacolor
+            time_seconds, data, linewidth=0.5, zorder=-1, color=raw_data_color
         )
 
         # Plot the threshold line
@@ -191,14 +194,14 @@ def spike_validation(
         rawdataplot.scatter(
             time_seconds[spikes_before_validation],
             data[spikes_before_validation],
-            color="red",
+            color=rejected_spike_color,
             marker="o",
             s=3,
         )
 
         # Plot green dots at accepted spikes
         rawdataplot.scatter(
-            time_seconds[spikes], data[spikes], color="green", marker="o", s=3
+            time_seconds[spikes], data[spikes], color=spike_color, marker="o", s=3
         )
 
         # Plot the 'boxes' used for validation
