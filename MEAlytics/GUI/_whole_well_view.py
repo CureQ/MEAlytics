@@ -1,31 +1,41 @@
-import os
-import json
 import copy
+import json
+import os
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
-
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QComboBox,
-    QFrame, QTabWidget, QWidget, QSizePolicy, QGroupBox
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSizePolicy,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPalette, QColor
-
-from MEAlytics.GUI._theme import (
-    SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR,
-    ACCENT, ACCENT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    DARK_BG, TOOLBAR_STYLESHEET,
-    make_divider, make_primary_btn, make_secondary_btn,
-)
-from MEAlytics.GUI._helpers import _set_entry, _get_float
 
 from MEAlytics.core._network_burst_detection import network_burst_detection
 from MEAlytics.core._plotting import well_electrodes_kde
+from MEAlytics.GUI._helpers import _get_float, _set_entry
+from MEAlytics.GUI._theme import (
+    DARK_BG,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TOOLBAR_STYLESHEET,
+    make_divider,
+    make_primary_btn,
+    make_secondary_btn,
+)
+
 
 class WholeWellView(QDialog):
     _DEFAULT_BW = 0.1
-    _TH_METHODS = ['Yen', 'Otsu', 'Li', 'Isodata', 'Mean', 'Minimum', 'Triangle']
+    _TH_METHODS = ["Yen", "Otsu", "Li", "Isodata", "Mean", "Minimum", "Triangle"]
 
     def __init__(self, folder: str, well: int):
         super().__init__()
@@ -78,7 +88,9 @@ class WholeWellView(QDialog):
 
         def _lbl(text):
             l = QLabel(text)
-            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+            l.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent"
+            )
             return l
 
         nbd_layout.addWidget(_lbl("Min channels (%):"), 0, 0)
@@ -143,7 +155,9 @@ class WholeWellView(QDialog):
         act_group.setLayout(act_layout)
 
         bw_lbl = QLabel("KDE bandwidth:")
-        bw_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+        bw_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent"
+        )
         act_layout.addWidget(bw_lbl, 0, 0)
 
         self._act_bw_entry = QLineEdit()
@@ -174,8 +188,8 @@ class WholeWellView(QDialog):
         idx = self._th_method_combo.findText(p["thresholding method"])
         if idx >= 0:
             self._th_method_combo.setCurrentIndex(idx)
-        _set_entry(self._min_channels_entry,  p["min channels"])
-        _set_entry(self._nbd_kde_bw_entry,    p["nbd kde bandwidth"])
+        _set_entry(self._min_channels_entry, p["min channels"])
+        _set_entry(self._nbd_kde_bw_entry, p["nbd kde bandwidth"])
 
     def _reset_nbd(self) -> None:
         self._default_nbd_values()
@@ -183,10 +197,10 @@ class WholeWellView(QDialog):
 
     def _update_nbd_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["min channels"]         = _get_float(self._min_channels_entry)
-        temp["thresholding method"]  = self._th_method_combo.currentText()
-        temp["nbd kde bandwidth"]    = _get_float(self._nbd_kde_bw_entry)
-        temp["output path"]          = self.folder
+        temp["min channels"] = _get_float(self._min_channels_entry)
+        temp["thresholding method"] = self._th_method_combo.currentText()
+        temp["nbd kde bandwidth"] = _get_float(self._nbd_kde_bw_entry)
+        temp["output path"] = self.folder
         self._plot_network_bursts(temp)
 
     def _plot_network_bursts(self, parameters: dict) -> None:
@@ -198,7 +212,9 @@ class WholeWellView(QDialog):
             save_figures=False,
         )
         self._apply_dark_theme(fig)
-        self._replace_canvas(self._nbd_plot_layout, self._nbd_plot_container, fig, toolbar=True)
+        self._replace_canvas(
+            self._nbd_plot_layout, self._nbd_plot_container, fig, toolbar=True
+        )
 
     def _reset_activity(self) -> None:
         _set_entry(self._act_bw_entry, self._DEFAULT_BW)
@@ -216,12 +232,14 @@ class WholeWellView(QDialog):
         )
 
         self._apply_dark_theme(fig, axis_colour="#586d97")
-        self._replace_canvas(self._activity_plot_layout, self._activity_plot_container, fig, toolbar=True)
+        self._replace_canvas(
+            self._activity_plot_layout, self._activity_plot_container, fig, toolbar=True
+        )
 
     @staticmethod
     def _apply_dark_theme(fig, axis_colour: str = None) -> None:
-        bg  = DARK_BG
-        fg  = axis_colour if axis_colour else TEXT_PRIMARY
+        bg = DARK_BG
+        fg = axis_colour if axis_colour else TEXT_PRIMARY
 
         fig.set_facecolor(bg)
         for ax in fig.axes:

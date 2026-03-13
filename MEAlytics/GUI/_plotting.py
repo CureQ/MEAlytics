@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -27,30 +26,27 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from MEAlytics.core._plotting import combined_feature_boxplots, features_over_time, get_defaultcolors
+from MEAlytics.core._plotting import (
+    combined_feature_boxplots,
+    features_over_time,
+    get_defaultcolors,
+)
+from MEAlytics.GUI._helpers import _adjust_color, _well_grid
 from MEAlytics.GUI._theme import (
-    ACCENT,
-    ACCENT_MUTED,
+    _BTN_STYLE_DEFAULT,
     BORDER_COLOR,
-    DARK_BG,
     STYLESHEET,
-    SURFACE_1,
     SURFACE_2,
-    SURFACE_3,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
-    _BTN_STYLE_DEFAULT,
     make_divider,
     make_label,
 )
-from MEAlytics.GUI._helpers import _well_grid, _adjust_color
-
-
-
 
 _BTN_SIZE = 56
+
 
 def _colored_btn_style(fg: str) -> str:
     hover = _adjust_color(fg, 0.7)
@@ -67,6 +63,7 @@ def _colored_btn_style(fg: str) -> str:
             background-color: {hover};
         }}
     """
+
 
 class PlottingWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -118,8 +115,12 @@ class PlottingWindow(QMainWindow):
         layout.addWidget(self._folder_btn)
 
         self._folder_path_lbl = QLabel("No folder selected")
-        self._folder_path_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent")
-        self._folder_path_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._folder_path_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px; background: transparent"
+        )
+        self._folder_path_lbl.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         layout.addWidget(self._folder_path_lbl, 1)
 
         self._file_count_lbl = QLabel("")
@@ -219,7 +220,9 @@ class PlottingWindow(QMainWindow):
             }}
         """)
         warn_btn.clicked.connect(
-            lambda: webbrowser.open("https://cureq.github.io/MEAlytics/supported_plates")
+            lambda: webbrowser.open(
+                "https://cureq.github.io/MEAlytics/supported_plates"
+            )
         )
         header.addWidget(warn_btn)
         outer.addLayout(header)
@@ -237,7 +240,9 @@ class PlottingWindow(QMainWindow):
 
         self._well_placeholder = QLabel("Load a folder to assign wells to labels.")
         self._well_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._well_placeholder.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px; background: transparent")
+        self._well_placeholder.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent"
+        )
         self._well_grid_layout.addWidget(self._well_placeholder, 0, 0)
         self._well_grid_widget.setFixedSize(300, 60)
 
@@ -284,9 +289,9 @@ class PlottingWindow(QMainWindow):
         ac.addWidget(make_label("Actions", "SectionLabel"))
 
         for text, slot in [
-            ("Save Labels",   self._save_labels),
+            ("Save Labels", self._save_labels),
             ("Import Labels", self._import_labels),
-            ("Reset Labels",  self._reset_labels),
+            ("Reset Labels", self._reset_labels),
         ]:
             btn = QPushButton(text)
             btn.setObjectName("SecondaryBtn")
@@ -364,16 +369,18 @@ class PlottingWindow(QMainWindow):
 
         if len(well_amnts) < 1:
             QMessageBox.critical(
-                self, "Error",
-                "No features files found in this folder. Minimum required: 1."
+                self,
+                "Error",
+                "No features files found in this folder. Minimum required: 1.",
             )
             return
 
         if np.min(well_amnts) != np.max(well_amnts):
             QMessageBox.critical(
-                self, "Error",
+                self,
+                "Error",
                 "Not all experiments have the same number of wells.\n"
-                "Please remove the exceptions from the folder."
+                "Please remove the exceptions from the folder.",
             )
             return
 
@@ -444,13 +451,16 @@ class PlottingWindow(QMainWindow):
                 f"background: {SURFACE_2}; border: 1px solid {BORDER_COLOR}; "
                 f"border-radius: 6px; padding: 2px 8px;"
             )
-            self._file_list_layout.insertWidget(self._file_list_layout.count() - 1, pill)
+            self._file_list_layout.insertWidget(
+                self._file_list_layout.count() - 1, pill
+            )
 
     def _well_button_func(self, well: int):
         if not self._selected_label:
             QMessageBox.warning(
-                self, "No Label Selected",
-                "Please select a label before assigning wells."
+                self,
+                "No Label Selected",
+                "Please select a label before assigning wells.",
             )
             return
 
@@ -564,15 +574,17 @@ class PlottingWindow(QMainWindow):
     def _create_plots(self):
         if not self._validate_groups():
             QMessageBox.warning(
-                self, "No Groups",
-                "Please create at least one label and assign at least one well to it."
+                self,
+                "No Groups",
+                "Please create at least one label and assign at least one well to it.",
             )
             return
         prefix = self._prefix_entry.text().strip()
         if not prefix:
             QMessageBox.warning(
-                self, "No Prefix",
-                "Please define the prefix used to indicate neuron age (e.g. DIV, t, day)."
+                self,
+                "No Prefix",
+                "Please define the prefix used to indicate neuron age (e.g. DIV, t, day).",
             )
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -593,13 +605,16 @@ class PlottingWindow(QMainWindow):
             webbrowser.open(f"file://{pdf_path}")
         except Exception:
             traceback.print_exc()
-            QMessageBox.critical(self, "Error", "Something went wrong while creating the plots.")
+            QMessageBox.critical(
+                self, "Error", "Something went wrong while creating the plots."
+            )
 
     def _create_boxplots(self):
         if not self._validate_groups():
             QMessageBox.warning(
-                self, "No Groups",
-                "Please create at least one label and assign at least one well to it."
+                self,
+                "No Groups",
+                "Please create at least one label and assign at least one well to it.",
             )
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -621,4 +636,6 @@ class PlottingWindow(QMainWindow):
             QMessageBox.information(self, "Saved", f"Figures saved to:\n{path}")
         except Exception:
             traceback.print_exc()
-            QMessageBox.critical(self, "Error", "Something went wrong while creating the boxplots.")
+            QMessageBox.critical(
+                self, "Error", "Something went wrong while creating the boxplots."
+            )

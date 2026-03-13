@@ -1,33 +1,59 @@
 import os
 import sys
 import webbrowser
-from pathlib import Path
 from importlib.metadata import version
+from pathlib import Path
+
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon, QPixmap
 
 # External Imports
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QStackedWidget, QFileDialog,
-    QProgressBar, QTextEdit, QScrollArea, QLineEdit, QGridLayout
+    QApplication,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QStackedWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QIcon
 
-# Core Imports
-from MEAlytics.mea import get_default_parameters, AnalysisWorker
+from MEAlytics.GUI._compress_files import CompressWindow
+from MEAlytics.GUI._exclude_electrodes import ExcludeElectrodesWindow
+from MEAlytics.GUI._helpers import resource_path
 
 # GUI Imports
 from MEAlytics.GUI._parameters import ParameterFrame
-from MEAlytics.GUI._view_results import ViewResultsView
 from MEAlytics.GUI._plotting import PlottingWindow
-from MEAlytics.GUI._exclude_electrodes import ExcludeElectrodesWindow
-from MEAlytics.GUI._compress_files import CompressWindow
-from MEAlytics.GUI._theme import STYLESHEET, DARK_BG, SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR, ACCENT, ACCENT_HOVER, ACCENT_MUTED, SUCCESS, WARNING, DANGER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, SIDEBAR_WIDTH
-from MEAlytics.GUI._theme import make_label, make_divider, icon_text_btn
-from MEAlytics.GUI._helpers import resource_path
+from MEAlytics.GUI._theme import (
+    SIDEBAR_WIDTH,
+    STYLESHEET,
+    SURFACE_1,
+    SURFACE_2,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    icon_text_btn,
+    make_divider,
+    make_label,
+)
+from MEAlytics.GUI._view_results import ViewResultsView
+
+# Core Imports
+from MEAlytics.mea import AnalysisWorker, get_default_parameters
+
 
 class DropZone(QFrame):
     """Drag-and-drop target that also allows browsing"""
+
     files_dropped = pyqtSignal(list)
 
     def __init__(self):
@@ -42,7 +68,9 @@ class DropZone(QFrame):
 
         hint = QLabel("Drop HDF5 files here  ·  or")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none; font-size: 13px;")
+        hint.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; border: none; font-size: 13px;"
+        )
         layout.addWidget(hint)
 
         browse = QPushButton("Browse Files")
@@ -64,13 +92,18 @@ class DropZone(QFrame):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.toLocalFile().endswith(('.h5', '.hdf5'))]
+        paths = [
+            u.toLocalFile()
+            for u in event.mimeData().urls()
+            if u.toLocalFile().endswith((".h5", ".hdf5"))
+        ]
         if paths:
             self.files_dropped.emit(paths)
 
 
 class FileJobCard(QFrame):
     """FileJobCard object that updates the user on file progress"""
+
     def __init__(self, filepath: str):
         super().__init__()
         self.setObjectName("FileCard")
@@ -84,7 +117,9 @@ class FileJobCard(QFrame):
         # Filename
         row1 = QHBoxLayout()
         name_lbl = QLabel(self.filename)
-        name_lbl.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {TEXT_PRIMARY}; background: transparent")
+        name_lbl.setStyleSheet(
+            f"font-weight: 600; font-size: 13px; color: {TEXT_PRIMARY}; background: transparent"
+        )
         row1.addWidget(name_lbl)
         row1.addStretch()
 
@@ -96,7 +131,9 @@ class FileJobCard(QFrame):
 
         # File path
         path_lbl = QLabel(str(Path(filepath).parent))
-        path_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        path_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; background: transparent"
+        )
         outer.addWidget(path_lbl)
 
         # Progress bar
@@ -173,8 +210,8 @@ class FileJobCard(QFrame):
         self.cancel_btn.setVisible(False)
         self.remove_btn.setVisible(True)
 
-class StartAnalysisView(QWidget):
 
+class StartAnalysisView(QWidget):
     def __init__(self, app_state):
         super().__init__()
         self.app_state = app_state
@@ -345,10 +382,10 @@ class StartAnalysisView(QWidget):
         params = dict(self.app_state.parameters)
 
         worker = AnalysisWorker(
-            filepath       = card.filepath,
-            sampling_rate  = frequency,
-            electrode_amnt = electrodes,
-            parameters     = params,
+            filepath=card.filepath,
+            sampling_rate=frequency,
+            electrode_amnt=electrodes,
+            parameters=params,
         )
         thread = QThread(self)
 
@@ -358,10 +395,15 @@ class StartAnalysisView(QWidget):
         thread.started.connect(worker.run)
         worker.log_message.connect(card.log)
         worker.progress_updated.connect(
-            lambda cur, tot, c=card: c.progress.setValue(int(cur / tot * 100)) if tot > 0 else None
+            lambda cur, tot, c=card: (
+                c.progress.setValue(int(cur / tot * 100)) if tot > 0 else None
+            )
         )
-        worker.finished.connect(lambda success, output_path, c=card, e=electrodes, f=frequency:
-            self._store_and_finish(c, success, output_path, e, f))
+        worker.finished.connect(
+            lambda success, output_path, c=card, e=electrodes, f=frequency: (
+                self._store_and_finish(c, success, output_path, e, f)
+            )
+        )
 
         # Clean up thread after worker is done
         worker.finished.connect(thread.quit)
@@ -376,19 +418,20 @@ class StartAnalysisView(QWidget):
         card._output_folder = output_path
         self._on_job_finished(card, success, electrodes, frequency)
 
-    def _on_job_finished(self, card: FileJobCard, success: bool, electrodes: int, frequency: int):
+    def _on_job_finished(
+        self, card: FileJobCard, success: bool, electrodes: int, frequency: int
+    ):
         if success:
             card.set_complete()
             output_folder = getattr(card, "_output_folder", None)
             if output_folder:
                 card.view_results_btn.clicked.connect(
-                    lambda _, f=output_folder, r=card.filepath:
-                        self._open_results(f, r)
+                    lambda _, f=output_folder, r=card.filepath: self._open_results(f, r)
                 )
         else:
             card.set_failed(aborted=not success)
 
-        self._active_card   = None
+        self._active_card = None
         self._active_worker = None
         self._active_thread = None
         self._run_next(electrodes, frequency)
@@ -411,6 +454,7 @@ class StartAnalysisView(QWidget):
                 self.job_cards.remove(card)
 
         self._check_critical_params()
+
 
 # Utilities
 class UtilitiesView(QWidget):
@@ -466,7 +510,9 @@ class UtilitiesView(QWidget):
             cl.addWidget(t)
 
             d = QLabel(desc)
-            d.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background-color: {SURFACE_1};")
+            d.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 12px; background-color: {SURFACE_1};"
+            )
             d.setWordWrap(True)
             cl.addWidget(d)
             cl.addStretch()
@@ -474,9 +520,7 @@ class UtilitiesView(QWidget):
             btn = QPushButton(btn_label)
             btn.setObjectName("PrimaryBtn")
             btn.setMinimumHeight(36)
-            btn.setCursor(
-                Qt.CursorShape.PointingHandCursor
-            )
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             if slot:
                 btn.clicked.connect(slot)
             cl.addWidget(btn)
@@ -510,6 +554,7 @@ class UtilitiesView(QWidget):
             self._compress_window.raise_()
             self._compress_window.activateWindow()
 
+
 # Sidebar
 class Sidebar(QFrame):
     nav_requested = pyqtSignal(str)
@@ -534,7 +579,9 @@ class Sidebar(QFrame):
         logo_icon = QLabel()
         logo_icon.setStyleSheet(f"background-color: {SURFACE_1};")
         pixmap = QPixmap(logo_path)
-        scaled_pixmap = pixmap.scaledToHeight(30, Qt.TransformationMode.SmoothTransformation)
+        scaled_pixmap = pixmap.scaledToHeight(
+            30, Qt.TransformationMode.SmoothTransformation
+        )
         logo_icon.setPixmap(scaled_pixmap)
         logo_row.addWidget(logo_icon)
 
@@ -594,9 +641,9 @@ class Sidebar(QFrame):
 
         links = [
             ("CureQ Project", "https://cureq.nl/"),
-            ("PyPI",          "https://pypi.org/project/MEAlytics/"),
-            ("GitHub",        "https://github.com/CureQ/MEAlytics"),
-            ("User Guide",    "https://cureq.github.io/MEAlytics/"),
+            ("PyPI", "https://pypi.org/project/MEAlytics/"),
+            ("GitHub", "https://github.com/CureQ/MEAlytics"),
+            ("User Guide", "https://cureq.github.io/MEAlytics/"),
         ]
         for text, url in links:
             btn = QPushButton(text)
@@ -665,10 +712,10 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.parameters_page)
 
         self._page_index = {
-            "start_analysis":   0,
+            "start_analysis": 0,
             "view_results": 1,
-            "utilities":   2,
-            "parameters":  3,
+            "utilities": 2,
+            "parameters": 3,
         }
 
         self.stack.setCurrentIndex(0)
@@ -682,6 +729,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(idx)
         self.sidebar._set_active(page_id)
 
+
 def MEA_GUI():
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)
@@ -690,6 +738,7 @@ def MEA_GUI():
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     MEA_GUI()

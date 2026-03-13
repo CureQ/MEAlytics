@@ -1,4 +1,4 @@
-""""
+""" "
 SPDX-License-Identifier: BSD-3-Clause
 This code is adapted from the PySpike library:
 https://github.com/mariomulansky/PySpike
@@ -13,19 +13,18 @@ import numpy as np
 import pandas as pd
 
 
-
 def isi_lengths(spike_times, t_start, t_end):
-    """ 
-        Calculate the interspike intervals (ISIs) for a given list of spike times with t_start & t_end as auxilary spikes.
+    """
+    Calculate the interspike intervals (ISIs) for a given list of spike times with t_start & t_end as auxilary spikes.
 
-        In:  
-            spike_times: list of spike timestamps (must be sorted)
-            t_start: start time of the recording
-            t_end: end time of the recording
-        Out: 
-            isi_lengths - ISI distance between spikes, or start and first spike
+    In:
+        spike_times: list of spike timestamps (must be sorted)
+        t_start: start time of the recording
+        t_end: end time of the recording
+    Out:
+        isi_lengths - ISI distance between spikes, or start and first spike
 
-        Note: the only complexities are with the edges and N==1
+    Note: the only complexities are with the edges and N==1
     """
 
     # Total number of spikes
@@ -39,8 +38,9 @@ def isi_lengths(spike_times, t_start, t_end):
     if spike_times[0] > t_start:
         # Silence at the beginning
         if n_spikes > 1:
-            interval_before_first_spike = max(spike_times[0] - t_start,
-                                              spike_times[1] - spike_times[0])
+            interval_before_first_spike = max(
+                spike_times[0] - t_start, spike_times[1] - spike_times[0]
+            )
         else:
             interval_before_first_spike = spike_times[0] - t_start
         i_start = 0
@@ -57,8 +57,9 @@ def isi_lengths(spike_times, t_start, t_end):
     if spike_times[-1] < t_end:
         # Silence at the end
         if n_spikes > 1:
-            interval_after_last_spike = max(t_end - spike_times[-1],
-                                            spike_times[-1] - spike_times[-2])
+            interval_after_last_spike = max(
+                t_end - spike_times[-1], spike_times[-1] - spike_times[-2]
+            )
         else:
             interval_after_last_spike = t_end - spike_times[0]
         i_end = n_spikes
@@ -79,7 +80,6 @@ def isi_lengths(spike_times, t_start, t_end):
     return isi_lengths
 
 
-
 def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
     """
     Compute the ISI-distance between two spike trains s1 and s2.
@@ -98,7 +98,7 @@ def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
 
     isi_value = 0.0  # Cumulative ISI-distance
     start_times = []  # To store start time of each ISI segment
-    list_isi = []     # To store ISI differences at each time segment
+    list_isi = []  # To store ISI differences at each time segment
 
     # Number of spikes in spiketrains
     Nspikes_1 = len(s1)
@@ -107,7 +107,7 @@ def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
     spikes_1 = np.asarray(s1)
     spikes_2 = np.asarray(s2)
 
-    # Determine ISI before first spike in spiketrain 1 
+    # Determine ISI before first spike in spiketrain 1
     if spikes_1[0] > t_start:
         if Nspikes_1 > 1:
             # Use the bigest interval (between t-start to first spike or spike 1 to spike 2.)
@@ -120,42 +120,60 @@ def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
         ISI1 = (spikes_1[1] - spikes_1[0]) if Nspikes_1 > 1 else t_end - spikes_1[0]
         index1 = 0  # First spike is before or at t_start
 
-    # Determine ISI before first spike in spiketrain 2 
+    # Determine ISI before first spike in spiketrain 2
     if spikes_2[0] > t_start:
-         # Use the bigest interval (between t-start to first spike or spike 1 to spike 2.) 
-        ISI2 = max(spikes_2[0] - t_start, spikes_2[1] - spikes_2[0]) if Nspikes_2 > 1 else spikes_2[0] - t_start
+        # Use the bigest interval (between t-start to first spike or spike 1 to spike 2.)
+        ISI2 = (
+            max(spikes_2[0] - t_start, spikes_2[1] - spikes_2[0])
+            if Nspikes_2 > 1
+            else spikes_2[0] - t_start
+        )
         index2 = -1
     else:
         # Calculate isi normal between two spikes
         ISI2 = (spikes_2[1] - spikes_2[0]) if Nspikes_2 > 1 else t_end - spikes_2[0]
         index2 = 0
 
-    # Initialize time tracking and ISI calculation 
+    # Initialize time tracking and ISI calculation
     last_t = t_start  # Last processed time
-    curr_isi = abs(ISI1 - ISI2) / max(MRTS, max(ISI1, ISI2))  # Initial normalized ISI difference
+    curr_isi = abs(ISI1 - ISI2) / max(
+        MRTS, max(ISI1, ISI2)
+    )  # Initial normalized ISI difference
     index = 1  # Counter for debugging or tracking steps
 
     # Main loop to process all spikes in order
     while index1 + index2 < Nspikes_1 + Nspikes_2 - 2:
         # Case 1: next spike is from spike train 1
-        if (index1 < Nspikes_1 - 1) and ((index2 == Nspikes_2 - 1) or (spikes_1[index1 + 1] < spikes_2[index2 + 1])):
+        if (index1 < Nspikes_1 - 1) and (
+            (index2 == Nspikes_2 - 1) or (spikes_1[index1 + 1] < spikes_2[index2 + 1])
+        ):
             index1 += 1
             curr_t = spikes_1[index1]
 
             if index1 < Nspikes_1 - 1:
                 ISI1 = spikes_1[index1 + 1] - spikes_1[index1]
             else:
-                ISI1 = max(t_end - spikes_1[index1], ISI1) if Nspikes_1 > 1 else t_end - spikes_1[index1]
+                ISI1 = (
+                    max(t_end - spikes_1[index1], ISI1)
+                    if Nspikes_1 > 1
+                    else t_end - spikes_1[index1]
+                )
 
         # Case 2: next spike is from spike train 2
-        elif (index2 < Nspikes_2 - 1) and ((index1 == Nspikes_1 - 1) or (spikes_1[index1 + 1] > spikes_2[index2 + 1])):
+        elif (index2 < Nspikes_2 - 1) and (
+            (index1 == Nspikes_1 - 1) or (spikes_1[index1 + 1] > spikes_2[index2 + 1])
+        ):
             index2 += 1
             curr_t = spikes_2[index2]
 
             if index2 < Nspikes_2 - 1:
                 ISI2 = spikes_2[index2 + 1] - spikes_2[index2]
             else:
-                ISI2 = max(t_end - spikes_2[index2], ISI2) if Nspikes_2 > 1 else t_end - spikes_2[index2]
+                ISI2 = (
+                    max(t_end - spikes_2[index2], ISI2)
+                    if Nspikes_2 > 1
+                    else t_end - spikes_2[index2]
+                )
 
         # Case 3: simultaneous spike in both trains
         else:
@@ -166,12 +184,20 @@ def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
             if index1 < Nspikes_1 - 1:
                 ISI1 = spikes_1[index1 + 1] - spikes_1[index1]
             else:
-                ISI1 = max(t_end - spikes_1[index1], ISI1) if Nspikes_1 > 1 else t_end - spikes_1[index1]
+                ISI1 = (
+                    max(t_end - spikes_1[index1], ISI1)
+                    if Nspikes_1 > 1
+                    else t_end - spikes_1[index1]
+                )
 
             if index2 < Nspikes_2 - 1:
                 ISI2 = spikes_2[index2 + 1] - spikes_2[index2]
             else:
-                ISI2 = max(t_end - spikes_2[index2], ISI2) if Nspikes_2 > 1 else t_end - spikes_2[index2]
+                ISI2 = (
+                    max(t_end - spikes_2[index2], ISI2)
+                    if Nspikes_2 > 1
+                    else t_end - spikes_2[index2]
+                )
 
         # Save results for plotting or further analysis
         start_times.append(last_t)
@@ -190,13 +216,11 @@ def isi_distance(s1, s2, t_start, t_end, MRTS=0.0):
     start_times.append(last_t)
     list_isi.append(curr_isi)
 
-    # Return both final distance value and time-resolved ISI differences 
-    df_isi_time = pd.DataFrame({
-        'time_start': start_times,
-        'isi': list_isi
-    })
+    # Return both final distance value and time-resolved ISI differences
+    df_isi_time = pd.DataFrame({"time_start": start_times, "isi": list_isi})
 
     return isi_value / (t_end - t_start), df_isi_time
+
 
 # Misschien adaptive in een andere ding?
 def default_thresh(train_list, t_start, t_end):
@@ -217,12 +241,14 @@ def default_thresh(train_list, t_start, t_end):
 
     # Collect all ISIs from each spike train
     for train in train_list:
-        spike_pool += isi_lengths(train, t_start, t_end)  # isi_lengths returns list of ISIs for one train
+        spike_pool += isi_lengths(
+            train, t_start, t_end
+        )  # isi_lengths returns list of ISIs for one train
 
     spike_pool = np.array(spike_pool)
 
     # Compute and return the root mean square of the ISIs
-    return np.sqrt(np.mean(spike_pool ** 2))
+    return np.sqrt(np.mean(spike_pool**2))
 
 
 def reconcile_spike_trains(spike_trains, t_start, t_end):
@@ -253,4 +279,3 @@ def reconcile_spike_trains(spike_trains, t_start, t_end):
         new_spike_trains.append(sorted(filtered_spikes))
 
     return new_spike_trains
-

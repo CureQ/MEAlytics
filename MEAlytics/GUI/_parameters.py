@@ -1,13 +1,26 @@
 import json
 import traceback
 
+from PyQt6.QtCore import Qt
+
 # PyQt Imports
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QLineEdit, QComboBox, QCheckBox, QPushButton, QFrame,
-    QScrollArea, QGroupBox, QFileDialog, QMessageBox
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt
+
 
 class ParameterFrame(QWidget):
     def __init__(self, parent):
@@ -49,7 +62,7 @@ class ParameterFrame(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         container = QWidget()
-        self.grid = QGridLayout(container) 
+        self.grid = QGridLayout(container)
         self.grid.setSpacing(16)
         self.grid.setContentsMargins(0, 4, 8, 4)
 
@@ -104,17 +117,48 @@ class ParameterFrame(QWidget):
     def _populate_grid(self):
         # Filter
         f_group = self._make_group("Filter Parameters")
-        self._add_input(f_group, "Low cutoff (Hz):", "low cutoff", 1, "e.g. 200", "Low-pass cutoff in Hz")
-        self._add_input(f_group, "High cutoff (Hz):", "high cutoff", 2, "e.g. 3500", "High-pass cutoff in Hz")
-        self._add_input(f_group, "Filter order:", "order", 3, "e.g. 2", "Butterworth filter order")
+        self._add_input(
+            f_group,
+            "Low cutoff (Hz):",
+            "low cutoff",
+            1,
+            "e.g. 200",
+            "Low-pass cutoff in Hz",
+        )
+        self._add_input(
+            f_group,
+            "High cutoff (Hz):",
+            "high cutoff",
+            2,
+            "e.g. 3500",
+            "High-pass cutoff in Hz",
+        )
+        self._add_input(
+            f_group, "Filter order:", "order", 3, "e.g. 2", "Butterworth filter order"
+        )
         self.grid.addWidget(f_group, 0, 0)
 
         # Spike Detection
         s_group = self._make_group("Spike Detection")
-        self._add_input(s_group, "Threshold portion:", "threshold portion", 1, "0–1", "Fraction of recording used for threshold estimation")
-        self._add_input(s_group, "Std Dev multiplier:", "standard deviation multiplier", 2, "e.g. 5.0")
+        self._add_input(
+            s_group,
+            "Threshold portion:",
+            "threshold portion",
+            1,
+            "0–1",
+            "Fraction of recording used for threshold estimation",
+        )
+        self._add_input(
+            s_group,
+            "Std Dev multiplier:",
+            "standard deviation multiplier",
+            2,
+            "e.g. 5.0",
+        )
         self._add_input(s_group, "RMS multiplier:", "rms multiplier", 3, "e.g. 5.0")
-        self._add_input(s_group, "Refractory period (s):", "refractory period", 4, "e.g. 0.001")
+        self._add_input(
+            s_group, "Refractory period (s):", "refractory period", 4, "e.g. 0.001"
+        )
 
         s_group.layout().addWidget(self._field_label("Validation method:"), 5, 0)
         self.val_method = QComboBox()
@@ -130,9 +174,13 @@ class ParameterFrame(QWidget):
         # Burst Detection
         b_group = self._make_group("Burst Detection")
         self._add_input(b_group, "Min spikes:", "minimal amount of spikes", 1)
-        self._add_input(b_group, "Default interval (ms):", "default interval threshold", 2)
+        self._add_input(
+            b_group, "Default interval (ms):", "default interval threshold", 2
+        )
         self._add_input(b_group, "Max interval (ms):", "max interval threshold", 3)
-        self._add_input(b_group, "ISI KDE bandwidth:", "burst detection kde bandwidth", 4)
+        self._add_input(
+            b_group, "ISI KDE bandwidth:", "burst detection kde bandwidth", 4
+        )
         self.grid.addWidget(b_group, 0, 2)
 
         # Network Burst Detection
@@ -140,12 +188,14 @@ class ParameterFrame(QWidget):
         self._add_input(n_group, "Min channels (0–1):", "min channels", 1)
         n_group.layout().addWidget(self._field_label("Threshold method:"), 2, 0)
         self.nw_method = QComboBox()
-        self.nw_method.addItems(["Yen", "Otsu", "Li", "Isodata", "Mean", "Minimum", "Triangle"])
+        self.nw_method.addItems(
+            ["Yen", "Otsu", "Li", "Isodata", "Mean", "Minimum", "Triangle"]
+        )
         n_group.layout().addWidget(self.nw_method, 2, 1)
         self._add_input(n_group, "NBD KDE bandwidth:", "nbd kde bandwidth", 3)
         self.grid.addWidget(n_group, 1, 2)
 
-        # Other 
+        # Other
         o_group = self._make_group("Other")
         self.multi_check = QCheckBox("Use multiprocessing")
         self.multi_check.setStyleSheet("background: transparent")
@@ -153,7 +203,14 @@ class ParameterFrame(QWidget):
 
         o_group.layout().addWidget(self._field_label("Synchronicity method:"), 2, 0)
         self.sync_method = QComboBox()
-        self.sync_method.addItems(["ISI-distance", "Adaptive ISI-distance", "SPIKE-distance", "Adaptive SPIKE-distance"])
+        self.sync_method.addItems(
+            [
+                "ISI-distance",
+                "Adaptive ISI-distance",
+                "SPIKE-distance",
+                "Adaptive SPIKE-distance",
+            ]
+        )
         o_group.layout().addWidget(self.sync_method, 2, 1)
 
         self.remove_inactive = QCheckBox("Remove inactive electrodes")
@@ -178,8 +235,15 @@ class ParameterFrame(QWidget):
         lbl.setStyleSheet("color: #8b95a8; font-size: 12px; background: transparent")
         return lbl
 
-    def _add_input(self, group: QGroupBox, label_text: str, key: str,
-                   row: int, placeholder: str = "", tooltip: str = ""):
+    def _add_input(
+        self,
+        group: QGroupBox,
+        label_text: str,
+        key: str,
+        row: int,
+        placeholder: str = "",
+        tooltip: str = "",
+    ):
         lbl = self._field_label(label_text)
         entry = QLineEdit()
         entry.setPlaceholderText(placeholder)
@@ -191,7 +255,7 @@ class ParameterFrame(QWidget):
         self.inputs[key] = entry
 
     def _toggle_validation_fields(self, choice: str):
-        is_noise = (choice == "Noisebased")
+        is_noise = choice == "Noisebased"
         for k in ("exit time", "drop amplitude", "max drop"):
             self.inputs[k].setEnabled(is_noise)
 
@@ -234,31 +298,45 @@ class ParameterFrame(QWidget):
             p = self.parent.app_state.parameters
 
             # Integers
-            for key in ("low cutoff", "high cutoff", "order", "minimal amount of spikes"):
+            for key in (
+                "low cutoff",
+                "high cutoff",
+                "order",
+                "minimal amount of spikes",
+            ):
                 p[key] = int(float(self.inputs[key].text()))
 
             # Floats
             for key in (
-                "refractory period", "exit time", "burst detection kde bandwidth",
-                "max interval threshold", "default interval threshold",
-                "max drop", "drop amplitude", "standard deviation multiplier",
-                "rms multiplier", "min channels", "nbd kde bandwidth",
-                "activity threshold", "threshold portion",
+                "refractory period",
+                "exit time",
+                "burst detection kde bandwidth",
+                "max interval threshold",
+                "default interval threshold",
+                "max drop",
+                "drop amplitude",
+                "standard deviation multiplier",
+                "rms multiplier",
+                "min channels",
+                "nbd kde bandwidth",
+                "activity threshold",
+                "threshold portion",
             ):
                 p[key] = float(self.inputs[key].text())
 
             # Other
-            p["thresholding method"]      = self.nw_method.currentText()
-            p["spike validation method"]  = self.val_method.currentText()
-            p["synchronicity method"]     = self.sync_method.currentText()
+            p["thresholding method"] = self.nw_method.currentText()
+            p["spike validation method"] = self.val_method.currentText()
+            p["synchronicity method"] = self.sync_method.currentText()
             p["remove inactive electrodes"] = self.remove_inactive.isChecked()
-            p["use multiprocessing"]      = self.multi_check.isChecked()
+            p["use multiprocessing"] = self.multi_check.isChecked()
 
             self.parent.show_frame("start_analysis")
 
         except Exception as e:
             traceback.print_exc()
             QMessageBox.critical(
-                self, "Validation Error",
-                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}"
+                self,
+                "Validation Error",
+                f"Parameter conversion failed. Ensure all fields contain valid numbers.\n\nError: {e}",
             )

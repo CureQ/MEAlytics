@@ -1,31 +1,41 @@
-import os
-import json
 import copy
+import json
+import os
 
 import h5py
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
-
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QLineEdit, QCheckBox, QComboBox,
-    QFrame, QTabWidget, QWidget, QSizePolicy, QScrollArea,
-    QGroupBox, QSpacerItem,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSizePolicy,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPalette, QColor
-
-from MEAlytics.GUI._theme import (
-    SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR,
-    ACCENT, ACCENT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    DARK_BG, TOOLBAR_STYLESHEET,
-    make_label, make_divider, make_primary_btn, make_secondary_btn,
-)
-from MEAlytics.GUI._helpers import _set_entry, _get_float, _get_int
 
 from MEAlytics.core._bandpass import butter_bandpass_filter
-from MEAlytics.core._threshold import fast_threshold
-from MEAlytics.core._spike_validation import spike_validation
 from MEAlytics.core._burst_detection import burst_detection
+from MEAlytics.core._spike_validation import spike_validation
+from MEAlytics.core._threshold import fast_threshold
+from MEAlytics.GUI._helpers import _get_float, _get_int, _set_entry
+from MEAlytics.GUI._theme import (
+    DARK_BG,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TOOLBAR_STYLESHEET,
+    make_divider,
+    make_primary_btn,
+    make_secondary_btn,
+)
+
 
 def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
     group = QGroupBox(title)
@@ -43,7 +53,9 @@ def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
         lbl_col, entry_col = col_pairs[col_idx]
 
         lbl = QLabel(label_text)
-        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+        lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent"
+        )
         layout.addWidget(lbl, grid_row, lbl_col)
 
         entry = QLineEdit()
@@ -58,8 +70,11 @@ def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
 
     return group, fields
 
+
 class SingleElectrodeView(QDialog):
-    def __init__(self, folder: str, rawfile: str, well: int, electrode: int, parent=None):
+    def __init__(
+        self, folder: str, rawfile: str, well: int, electrode: int, parent=None
+    ):
         super().__init__(parent)
         self.setWindowTitle(f"Well: {well} - Electrode: {electrode}")
         self.resize(1280, 860)
@@ -68,7 +83,9 @@ class SingleElectrodeView(QDialog):
         with open(os.path.join(folder, "parameters.json")) as f:
             self.parameters = json.load(f)
         self.parameters["output hdf file"] = os.path.join(folder, "output_values.h5")
-        self.electrode_nr = (well - 1) * self.parameters["electrode amount"] + electrode - 1
+        self.electrode_nr = (
+            (well - 1) * self.parameters["electrode amount"] + electrode - 1
+        )
         self.rawfile = rawfile
         self.folder = folder
 
@@ -106,25 +123,31 @@ class SingleElectrodeView(QDialog):
         settings_row = QHBoxLayout()
         settings_row.setSpacing(12)
 
-        bp_group, bp_fields = _make_group("Bandpass Parameters", [
-            ("Low cutoff",  "low cutoff"),
-            ("High cutoff", "high cutoff"),
-            ("Order",       "order"),
-        ])
+        bp_group, bp_fields = _make_group(
+            "Bandpass Parameters",
+            [
+                ("Low cutoff", "low cutoff"),
+                ("High cutoff", "high cutoff"),
+                ("Order", "order"),
+            ],
+        )
         self._lowcut_entry = bp_fields["low cutoff"]
         self._highcut_entry = bp_fields["high cutoff"]
         self._order_entry = bp_fields["order"]
         settings_row.addWidget(bp_group)
 
         # Threshold group
-        th_group, th_fields = _make_group("Threshold Parameters", [
-            ("Std dev multiplier", "standard deviation multiplier"),
-            ("RMS multiplier",     "rms multiplier"),
-            ("Threshold portion",  "threshold portion"),
-        ])
-        self._stdev_entry  = th_fields["standard deviation multiplier"]
-        self._rms_entry    = th_fields["rms multiplier"]
-        self._thpn_entry   = th_fields["threshold portion"]
+        th_group, th_fields = _make_group(
+            "Threshold Parameters",
+            [
+                ("Std dev multiplier", "standard deviation multiplier"),
+                ("RMS multiplier", "rms multiplier"),
+                ("Threshold portion", "threshold portion"),
+            ],
+        )
+        self._stdev_entry = th_fields["standard deviation multiplier"]
+        self._rms_entry = th_fields["rms multiplier"]
+        self._thpn_entry = th_fields["threshold portion"]
         settings_row.addWidget(th_group)
 
         val_group = QGroupBox("Spike Detection Parameters")
@@ -135,7 +158,9 @@ class SingleElectrodeView(QDialog):
 
         def _lbl(text):
             l = QLabel(text)
-            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent")
+            l.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent"
+            )
             return l
 
         val_layout.addWidget(_lbl("Spike validation method:"), 0, 0)
@@ -221,7 +246,9 @@ class SingleElectrodeView(QDialog):
 
         def _lbl(text):
             l = QLabel(text)
-            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent")
+            l.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent"
+            )
             return l
 
         burst_layout.addWidget(_lbl("Minimal amount of spikes:"), 0, 0)
@@ -278,16 +305,16 @@ class SingleElectrodeView(QDialog):
 
     def _default_spike_values(self) -> None:
         p = self.parameters
-        _set_entry(self._lowcut_entry,       p["low cutoff"])
-        _set_entry(self._highcut_entry,      p["high cutoff"])
-        _set_entry(self._order_entry,        p["order"])
-        _set_entry(self._stdev_entry,        p["standard deviation multiplier"])
-        _set_entry(self._rms_entry,          p["rms multiplier"])
-        _set_entry(self._thpn_entry,         p["threshold portion"])
-        _set_entry(self._rfpd_entry,         p["refractory period"])
-        _set_entry(self._exittime_entry,     p["exit time"])
-        _set_entry(self._dropamplitude_entry,p["drop amplitude"])
-        _set_entry(self._maxdrop_entry,      p["max drop"])
+        _set_entry(self._lowcut_entry, p["low cutoff"])
+        _set_entry(self._highcut_entry, p["high cutoff"])
+        _set_entry(self._order_entry, p["order"])
+        _set_entry(self._stdev_entry, p["standard deviation multiplier"])
+        _set_entry(self._rms_entry, p["rms multiplier"])
+        _set_entry(self._thpn_entry, p["threshold portion"])
+        _set_entry(self._rfpd_entry, p["refractory period"])
+        _set_entry(self._exittime_entry, p["exit time"])
+        _set_entry(self._dropamplitude_entry, p["drop amplitude"])
+        _set_entry(self._maxdrop_entry, p["max drop"])
         self._plot_rectangle_cb.setChecked(False)
         idx = self._validation_combo.findText(p["spike validation method"])
         if idx >= 0:
@@ -295,8 +322,12 @@ class SingleElectrodeView(QDialog):
         self._set_states()
 
     def _reset_spike(self) -> None:
-        for w in (self._exittime_entry, self._maxdrop_entry,
-                  self._dropamplitude_entry, self._plot_rectangle_cb):
+        for w in (
+            self._exittime_entry,
+            self._maxdrop_entry,
+            self._dropamplitude_entry,
+            self._plot_rectangle_cb,
+        ):
             w.setEnabled(True)
         self._default_spike_values()
         self._set_states()
@@ -304,27 +335,29 @@ class SingleElectrodeView(QDialog):
 
     def _update_spike_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["low cutoff"]                    = _get_int(self._lowcut_entry)
-        temp["high cutoff"]                   = _get_int(self._highcut_entry)
-        temp["order"]                         = _get_int(self._order_entry)
+        temp["low cutoff"] = _get_int(self._lowcut_entry)
+        temp["high cutoff"] = _get_int(self._highcut_entry)
+        temp["order"] = _get_int(self._order_entry)
         temp["standard deviation multiplier"] = _get_float(self._stdev_entry)
-        temp["rms multiplier"]                = _get_float(self._rms_entry)
-        temp["threshold portion"]             = _get_float(self._thpn_entry)
-        temp["refractory period"]             = _get_float(self._rfpd_entry)
+        temp["rms multiplier"] = _get_float(self._rms_entry)
+        temp["threshold portion"] = _get_float(self._thpn_entry)
+        temp["refractory period"] = _get_float(self._rfpd_entry)
 
         if self._validation_combo.currentText() == "none":
             temp["drop amplitude"] = 0
         else:
-            temp["exit time"]      = _get_float(self._exittime_entry)
+            temp["exit time"] = _get_float(self._exittime_entry)
             temp["drop amplitude"] = _get_float(self._dropamplitude_entry)
-            temp["max drop"]       = _get_float(self._maxdrop_entry)
+            temp["max drop"] = _get_float(self._maxdrop_entry)
 
         temp["output path"] = self.folder
         self._plot_single_electrode(temp)
 
     def _plot_single_electrode(self, parameters: dict) -> None:
         with h5py.File(self.rawfile, "r") as hf:
-            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][self.electrode_nr]
+            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][
+                self.electrode_nr
+            ]
 
         electrode_data = butter_bandpass_filter(raw_data, parameters)
         threshold = fast_threshold(electrode_data, parameters)
@@ -339,14 +372,16 @@ class SingleElectrodeView(QDialog):
         )
 
         self._apply_dark_theme(fig)
-        self._replace_canvas(self._spike_plot_container, self._spike_plot_layout, fig, toolbar=True)
+        self._replace_canvas(
+            self._spike_plot_container, self._spike_plot_layout, fig, toolbar=True
+        )
 
     def _default_burst_values(self) -> None:
         p = self.parameters
         _set_entry(self._minspikes_entry, p["minimal amount of spikes"])
-        _set_entry(self._def_iv_entry,    p["default interval threshold"])
-        _set_entry(self._max_iv_entry,    p["max interval threshold"])
-        _set_entry(self._kde_bw_entry,    p["burst detection kde bandwidth"])
+        _set_entry(self._def_iv_entry, p["default interval threshold"])
+        _set_entry(self._max_iv_entry, p["max interval threshold"])
+        _set_entry(self._kde_bw_entry, p["burst detection kde bandwidth"])
 
     def _burst_reset(self) -> None:
         self._default_burst_values()
@@ -354,16 +389,18 @@ class SingleElectrodeView(QDialog):
 
     def _update_burst_plot(self) -> None:
         temp = copy.deepcopy(self.parameters)
-        temp["minimal amount of spikes"]    = _get_int(self._minspikes_entry)
-        temp["default interval threshold"]  = _get_float(self._def_iv_entry)
-        temp["max interval threshold"]      = _get_float(self._max_iv_entry)
+        temp["minimal amount of spikes"] = _get_int(self._minspikes_entry)
+        temp["default interval threshold"] = _get_float(self._def_iv_entry)
+        temp["max interval threshold"] = _get_float(self._max_iv_entry)
         temp["burst detection kde bandwidth"] = _get_float(self._kde_bw_entry)
         temp["output path"] = self.folder
         self._plot_burst_detection(temp)
 
     def _plot_burst_detection(self, parameters: dict) -> None:
         with h5py.File(self.rawfile, "r") as hf:
-            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][self.electrode_nr]
+            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][
+                self.electrode_nr
+            ]
 
         electrode_data = butter_bandpass_filter(raw_data, parameters)
         KDE_fig, burst_fig = burst_detection(
@@ -380,7 +417,9 @@ class SingleElectrodeView(QDialog):
         self._clear_layout(self._burst_plot_layout)
 
         burst_canvas = FigureCanvasQTAgg(burst_fig)
-        burst_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        burst_canvas.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         burst_wrapper = QWidget()
         burst_wrapper_layout = QVBoxLayout(burst_wrapper)
@@ -393,7 +432,9 @@ class SingleElectrodeView(QDialog):
         burst_canvas.draw()
 
         kde_canvas = FigureCanvasQTAgg(KDE_fig)
-        kde_canvas.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        kde_canvas.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
         kde_canvas.draw()
 
         self._burst_plot_layout.addWidget(burst_wrapper, stretch=3)
@@ -422,7 +463,9 @@ class SingleElectrodeView(QDialog):
             if widget is not None:
                 widget.deleteLater()
 
-    def _replace_canvas(self, container: QFrame, layout: QVBoxLayout, fig, toolbar: bool = False) -> None:
+    def _replace_canvas(
+        self, container: QFrame, layout: QVBoxLayout, fig, toolbar: bool = False
+    ) -> None:
         self._clear_layout(layout)
 
         canvas = FigureCanvasQTAgg(fig)

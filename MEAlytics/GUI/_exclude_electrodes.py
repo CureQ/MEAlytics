@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
@@ -27,28 +26,24 @@ from PyQt6.QtWidgets import (
 )
 
 from MEAlytics.core._features import recalculate_features
+from MEAlytics.GUI._helpers import _adjust_color, _electrode_grid, _well_grid
 from MEAlytics.GUI._theme import (
-    ACCENT,
     ACCENT_MUTED,
     BORDER_COLOR,
-    DANGER,
     STYLESHEET,
-    SURFACE_1,
+    SUCCESS,
     SURFACE_2,
     SURFACE_3,
-    SUCCESS,
     TEXT_MUTED,
-    TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
     make_divider,
     make_label,
 )
-from MEAlytics.GUI._helpers import _well_grid, _electrode_grid, _adjust_color
 
-_COLOR_SELECTED   = "#3d8ef0"
+_COLOR_SELECTED = "#3d8ef0"
 _COLOR_UNSELECTED = "#ef4444"
-_COLOR_SELECTED_HOVER   = "#1e3a6e"
+_COLOR_SELECTED_HOVER = "#1e3a6e"
 _COLOR_UNSELECTED_HOVER = "#7f1d1d"
 
 _FILE_SELECTED_STYLE = f"""
@@ -83,10 +78,11 @@ _FILE_DESELECTED_STYLE = f"""
     }}
 """
 
+
 class _ConfigThumbnail(QWidget):
-    _CELL   = 6    # px per electrode square
-    _GAP    = 3    # px gap between wells
-    _MARGIN = 4    # px outer margin
+    _CELL = 6  # px per electrode square
+    _GAP = 3  # px gap between wells
+    _MARGIN = 4  # px outer margin
 
     def __init__(self):
         super().__init__()
@@ -111,11 +107,11 @@ class _ConfigThumbnail(QWidget):
         w_cols, w_rows = _well_grid(self._well_amnt)
 
         cell = self._CELL
-        gap  = self._GAP
-        m    = self._MARGIN
+        gap = self._GAP
+        m = self._MARGIN
 
-        total_w = m*2 + w_cols * (e_cols * cell + gap) - gap
-        total_h = m*2 + w_rows * (e_rows * cell + gap) - gap
+        total_w = m * 2 + w_cols * (e_cols * cell + gap) - gap
+        total_h = m * 2 + w_rows * (e_rows * cell + gap) - gap
         self.setFixedSize(total_w, total_h)
 
     def paintEvent(self, event):
@@ -125,14 +121,14 @@ class _ConfigThumbnail(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
-        mask    = _electrode_grid(self._electrode_amnt)
-        e_cols  = mask.shape[1]
-        e_rows  = mask.shape[0]
+        mask = _electrode_grid(self._electrode_amnt)
+        e_cols = mask.shape[1]
+        e_rows = mask.shape[0]
         w_cols, w_rows = _well_grid(self._well_amnt)
 
         cell = self._CELL
-        gap  = self._GAP
-        m    = self._MARGIN
+        gap = self._GAP
+        m = self._MARGIN
 
         config_idx = 0
 
@@ -145,8 +141,12 @@ class _ConfigThumbnail(QWidget):
                     for ec in range(e_cols):
                         if not mask[er, ec]:
                             continue
-                        active = bool(self._config[config_idx]) if config_idx < len(self._config) else True
-                        color  = QColor(_COLOR_SELECTED if active else _COLOR_UNSELECTED)
+                        active = (
+                            bool(self._config[config_idx])
+                            if config_idx < len(self._config)
+                            else True
+                        )
+                        color = QColor(_COLOR_SELECTED if active else _COLOR_UNSELECTED)
                         painter.fillRect(
                             well_x + ec * cell,
                             well_y + er * cell,
@@ -157,6 +157,7 @@ class _ConfigThumbnail(QWidget):
                         config_idx += 1
 
         painter.end()
+
 
 class EditConfigurationDialog(QDialog):
     def __init__(
@@ -171,7 +172,7 @@ class EditConfigurationDialog(QDialog):
         self.setStyleSheet(STYLESHEET)
         self.setMinimumSize(400, 300)
 
-        self._wells      = wells
+        self._wells = wells
         self._electrodes = electrodes
         self._electrode_buttons: dict[str, dict] = {}
 
@@ -194,12 +195,14 @@ class EditConfigurationDialog(QDialog):
         mc.addWidget(make_divider())
 
         for text, slot in [
-            ("Load configuration",  self._load_config),
-            ("Save configuration",  self._save_config),
+            ("Load configuration", self._load_config),
+            ("Save configuration", self._save_config),
             ("Apply configuration", self._apply_config),
         ]:
             btn = QPushButton(text)
-            btn.setObjectName("SecondaryBtn" if text != "Apply configuration" else "PrimaryBtn")
+            btn.setObjectName(
+                "SecondaryBtn" if text != "Apply configuration" else "PrimaryBtn"
+            )
             btn.setMinimumHeight(36)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(slot)
@@ -216,7 +219,7 @@ class EditConfigurationDialog(QDialog):
         sc.addWidget(make_divider())
 
         for text, slot in [
-            ("Select all",   self._select_all),
+            ("Select all", self._select_all),
             ("Deselect all", self._deselect_all),
         ]:
             btn = QPushButton(text)
@@ -347,14 +350,17 @@ class EditConfigurationDialog(QDialog):
         try:
             config = np.load(path)
         except Exception:
-            QMessageBox.critical(self, "Error", "Could not load the configuration file.")
+            QMessageBox.critical(
+                self, "Error", "Could not load the configuration file."
+            )
             return
 
         if len(config) != len(self._electrode_buttons):
             QMessageBox.critical(
-                self, "Error",
+                self,
+                "Error",
                 f"The configuration has {len(config)} electrodes, but the current "
-                f"experiments have {len(self._electrode_buttons)}."
+                f"experiments have {len(self._electrode_buttons)}.",
             )
             return
 
@@ -364,11 +370,14 @@ class EditConfigurationDialog(QDialog):
             self._apply_btn_style(entry["button"], active=bool(value))
 
     def _apply_config(self):
-        self._applied_config = np.array([e["state"] for e in self._electrode_buttons.values()])
+        self._applied_config = np.array(
+            [e["state"] for e in self._electrode_buttons.values()]
+        )
         self.accept()
 
     def get_config(self) -> np.ndarray | None:
         return self._applied_config
+
 
 class ExcludeElectrodesWindow(QMainWindow):
     _recalc_done = pyqtSignal(list, list, list)
@@ -445,7 +454,9 @@ class ExcludeElectrodesWindow(QMainWindow):
         pc.addWidget(make_divider())
 
         self._config_status = QLabel("No configuration loaded")
-        self._config_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        self._config_status.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; background: transparent"
+        )
         pc.addWidget(self._config_status)
 
         self._thumbnail = _ConfigThumbnail()
@@ -474,8 +485,12 @@ class ExcludeElectrodesWindow(QMainWindow):
         header.addWidget(self._file_count_lbl)
         layout.addLayout(header)
 
-        hint = QLabel("Click a file to toggle whether it is included in the recalculation.")
-        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        hint = QLabel(
+            "Click a file to toggle whether it is included in the recalculation."
+        )
+        hint.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; background: transparent"
+        )
         layout.addWidget(hint)
         layout.addWidget(make_divider())
 
@@ -528,39 +543,44 @@ class ExcludeElectrodesWindow(QMainWindow):
                         electrode_amnts.append(params["electrode amount"])
                     except Exception:
                         QMessageBox.critical(
-                            self, "Error",
+                            self,
+                            "Error",
                             f"Could not find a complementary 'parameters.json' for '{file}'.\n"
-                            "Please make sure every feature file is accompanied by its original parameters.json."
+                            "Please make sure every feature file is accompanied by its original parameters.json.",
                         )
                         return
 
         if not well_amnts:
-            QMessageBox.critical(self, "Error", "No feature files found in the selected folder.")
+            QMessageBox.critical(
+                self, "Error", "No feature files found in the selected folder."
+            )
             return
 
         if np.min(well_amnts) != np.max(well_amnts):
             QMessageBox.critical(
-                self, "Error",
+                self,
+                "Error",
                 "Not all experiments have the same number of wells.\n"
-                "Please remove the exceptions from the folder."
+                "Please remove the exceptions from the folder.",
             )
             return
 
         if np.min(electrode_amnts) != np.max(electrode_amnts):
             QMessageBox.critical(
-                self, "Error",
+                self,
+                "Error",
                 "Not all experiments have the same number of electrodes per well.\n"
-                "Please remove the exceptions from the folder."
+                "Please remove the exceptions from the folder.",
             )
             return
 
-        new_well_amnt      = int(np.min(well_amnts))
+        new_well_amnt = int(np.min(well_amnts))
         new_electrode_amnt = int(np.min(electrode_amnts))
 
         if self._config_selected:
             layout_unchanged = (
-                new_well_amnt      == self._well_amnt and
-                new_electrode_amnt == self._electrode_amnt
+                new_well_amnt == self._well_amnt
+                and new_electrode_amnt == self._electrode_amnt
             )
             if layout_unchanged:
                 pass
@@ -578,14 +598,16 @@ class ExcludeElectrodesWindow(QMainWindow):
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     return
-                
-                self._configuration   = None
+
+                self._configuration = None
                 self._config_selected = False
                 self._config_status.setText("No configuration loaded")
-                self._config_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+                self._config_status.setStyleSheet(
+                    f"color: {TEXT_MUTED}; font-size: 11px;"
+                )
                 self._thumbnail.setVisible(False)
 
-        self._well_amnt      = new_well_amnt
+        self._well_amnt = new_well_amnt
         self._electrode_amnt = new_electrode_amnt
         self._display_files(file_paths)
 
@@ -618,8 +640,9 @@ class ExcludeElectrodesWindow(QMainWindow):
     def _edit_configuration(self):
         if not self._file_buttons:
             QMessageBox.warning(
-                self, "No Folder Loaded",
-                "Please load a folder first. The electrode layout is determined by the selected files."
+                self,
+                "No Folder Loaded",
+                "Please load a folder first. The electrode layout is determined by the selected files.",
             )
             return
 
@@ -641,20 +664,25 @@ class ExcludeElectrodesWindow(QMainWindow):
                 self._config_status.setStyleSheet(
                     f"color: {WARNING if n_excluded > 0 else SUCCESS}; font-size: 11px;"
                 )
-                self._thumbnail.set_config(config, self._well_amnt, self._electrode_amnt)
+                self._thumbnail.set_config(
+                    config, self._well_amnt, self._electrode_amnt
+                )
                 self._thumbnail.setVisible(True)
 
     def _recalculate_features_btn(self):
         if not self._config_selected:
             QMessageBox.warning(
-                self, "No Configuration",
-                "No configuration selected. Please create one using 'Edit / New Configuration'."
+                self,
+                "No Configuration",
+                "No configuration selected. Please create one using 'Edit / New Configuration'.",
             )
             return
 
         selected_files = [p for p, e in self._file_buttons.items() if e["state"]]
         if not selected_files:
-            QMessageBox.warning(self, "No Files Selected", "No files are selected for recalculation.")
+            QMessageBox.warning(
+                self, "No Files Selected", "No files are selected for recalculation."
+            )
             return
 
         self._progress_bar.setMaximum(len(selected_files))
@@ -695,7 +723,7 @@ class ExcludeElectrodesWindow(QMainWindow):
                 errors.append(e)
 
             self._progress_bar.setValue(i + 1)
-            self._progress_label.setText(f"Processing {i+1} / {len(selected_files)}…")
+            self._progress_label.setText(f"Processing {i + 1} / {len(selected_files)}…")
 
         self._recalc_done.emit(finished, failed, errors)
 

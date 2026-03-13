@@ -1,6 +1,6 @@
 import os
-import traceback
 import threading
+import traceback
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -28,12 +27,9 @@ from MEAlytics.GUI._theme import (
     BORDER_COLOR,
     DANGER,
     STYLESHEET,
-    SURFACE_1,
-    SURFACE_2,
-    SURFACE_3,
     SUCCESS,
+    SURFACE_3,
     TEXT_MUTED,
-    TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
     make_divider,
@@ -43,7 +39,7 @@ from MEAlytics.GUI._theme import (
 
 class CompressWindow(QMainWindow):
     _progress_updated = pyqtSignal(int, int, str)
-    _file_finished    = pyqtSignal(str, bool)
+    _file_finished = pyqtSignal(str, bool)
     _compression_done = pyqtSignal(list, list)
 
     def __init__(self, parent=None):
@@ -131,7 +127,9 @@ class CompressWindow(QMainWindow):
         gzip_level_lbl.setStyleSheet("background: transparent")
         gzip_row.addWidget(gzip_level_lbl)
         self._gzip_level_lbl = QLabel("1")
-        self._gzip_level_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent")
+        self._gzip_level_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; background: transparent"
+        )
         gzip_row.addWidget(self._gzip_level_lbl)
         gzip_row.addStretch()
         mc.addLayout(gzip_row)
@@ -191,6 +189,7 @@ class CompressWindow(QMainWindow):
 
         layout.addStretch()
         return panel
+
     def _build_progress_panel(self) -> QWidget:
         panel = QFrame()
         panel.setObjectName("Card")
@@ -202,7 +201,9 @@ class CompressWindow(QMainWindow):
         layout.addWidget(make_divider())
 
         self._status_lbl = QLabel("No compression running.")
-        self._status_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent")
+        self._status_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px; background: transparent"
+        )
         layout.addWidget(self._status_lbl)
 
         self._progress_bar = QProgressBar()
@@ -259,9 +260,7 @@ class CompressWindow(QMainWindow):
         if self._compress_all_cb.isChecked():
             folder = os.path.dirname(self._selected_file)
             files = [
-                os.path.join(folder, f)
-                for f in os.listdir(folder)
-                if f.endswith(".h5")
+                os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".h5")
             ]
         else:
             files = [self._selected_file]
@@ -287,7 +286,7 @@ class CompressWindow(QMainWindow):
 
     def _compress_thread(self, files: list[str], method: str, level: int):
         success_files: list[str] = []
-        failed_files:  list[str] = []
+        failed_files: list[str] = []
 
         for i, file in enumerate(files):
             if self._abort_flag:
@@ -319,23 +318,23 @@ class CompressWindow(QMainWindow):
     def _on_file_finished(self, filepath: str, success: bool):
         name = Path(filepath).name
         lbl = QLabel(f"{'✔' if success else '✘'}  {name}")
-        lbl.setStyleSheet(
-            f"color: {SUCCESS if success else DANGER}; font-size: 12px;"
-        )
+        lbl.setStyleSheet(f"color: {SUCCESS if success else DANGER}; font-size: 12px;")
         lbl.setToolTip(filepath)
         lbl.setWordWrap(True)
         self._log_layout.insertWidget(self._log_layout.count() - 1, lbl)
 
     def _on_compression_done(self, success_files: list[str], failed_files: list[str]):
         self._progress_bar.setValue(self._progress_bar.maximum())
-        n_ok   = len(success_files)
+        n_ok = len(success_files)
         n_fail = len(failed_files)
 
         if n_fail == 0:
-            msg   = f"Done - {n_ok} file{'s' if n_ok != 1 else ''} compressed successfully."
+            msg = (
+                f"Done - {n_ok} file{'s' if n_ok != 1 else ''} compressed successfully."
+            )
             color = SUCCESS
         else:
-            msg   = f"Done - {n_ok} succeeded, {n_fail} failed."
+            msg = f"Done - {n_ok} succeeded, {n_fail} failed."
             color = WARNING
 
         self._status_lbl.setText(msg)

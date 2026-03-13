@@ -4,7 +4,6 @@ from functools import partial
 from pathlib import Path
 
 import h5py
-
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
@@ -22,31 +21,28 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from MEAlytics.GUI._heatmap import HeatmapFrame
+from MEAlytics.GUI._helpers import _electrode_grid, _well_grid
+from MEAlytics.GUI._single_electrode_view import SingleElectrodeView
+
 # GUI Imports
 from MEAlytics.GUI._theme import (
+    _BTN_STYLE_DEFAULT,
+    _BTN_STYLE_SELECTED,
     ACCENT,
     ACCENT_MUTED,
     BORDER_COLOR,
-    DANGER,
-    DARK_BG,
-    SUCCESS,
-    SURFACE_1,
     SURFACE_2,
     SURFACE_3,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
-    _BTN_STYLE_DEFAULT,
-    _BTN_STYLE_SELECTED,
     make_divider,
     make_label,
 )
-
-from MEAlytics.GUI._single_electrode_view import SingleElectrodeView
 from MEAlytics.GUI._whole_well_view import WholeWellView
-from MEAlytics.GUI._heatmap import HeatmapFrame
-from MEAlytics.GUI._helpers import _electrode_grid, _well_grid
+
 
 def _grid_button(label: str, size: int = 56) -> QPushButton:
     btn = QPushButton(str(label))
@@ -71,8 +67,8 @@ def _grid_button(label: str, size: int = 56) -> QPushButton:
 
     return btn
 
-class _WellGrid(QWidget):
 
+class _WellGrid(QWidget):
     well_clicked = pyqtSignal(int)
 
     def __init__(self, n_wells: int):
@@ -109,7 +105,6 @@ class _WellGrid(QWidget):
 
 
 class _ElectrodeGrid(QWidget):
-
     electrode_clicked = pyqtSignal(int)
 
     def __init__(self, n_electrodes: int):
@@ -134,8 +129,8 @@ class _ElectrodeGrid(QWidget):
     def _clicked(self, electrode: int):
         self.electrode_clicked.emit(electrode)
 
-class _ElidedPathLabel(QLabel):
 
+class _ElidedPathLabel(QLabel):
     def __init__(self, prefix: str = ""):
         super().__init__()
         self._prefix = prefix
@@ -167,13 +162,16 @@ class _ElidedPathLabel(QLabel):
             self.setText(elided)
             self.blockSignals(False)
 
+
 class _WindowRegistry:
     def __init__(self):
         self._windows: list[QDialog] = []
 
     def register(self, dlg: QDialog):
         self._windows.append(dlg)
-        dlg.destroyed.connect(lambda: self._windows.remove(dlg) if dlg in self._windows else None)
+        dlg.destroyed.connect(
+            lambda: self._windows.remove(dlg) if dlg in self._windows else None
+        )
 
     def close_all(self):
         for w in list(self._windows):
@@ -182,6 +180,7 @@ class _WindowRegistry:
 
     def count(self) -> int:
         return len(self._windows)
+
 
 class ViewResultsView(QWidget):
     def __init__(self, app_state):
@@ -228,14 +227,18 @@ class ViewResultsView(QWidget):
         layout.setSpacing(20)
 
         title = QLabel("Load Analysis Results")
-        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {TEXT_PRIMARY}; background: transparent")
+        title.setStyleSheet(
+            f"font-size: 16px; font-weight: 700; color: {TEXT_PRIMARY}; background: transparent"
+        )
         layout.addWidget(title)
 
         desc = QLabel(
             "Select the output folder produced by MEAlytics and the original raw HDF5 file to explore your analysis results."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+        desc.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent"
+        )
         layout.addWidget(desc)
 
         folder_row = QHBoxLayout()
@@ -245,7 +248,9 @@ class ViewResultsView(QWidget):
             f"color: {TEXT_MUTED}; font-size: 12px; background: {SURFACE_2}; "
             f"border: 1px solid {BORDER_COLOR}; border-radius: 7px; padding: 7px 12px;"
         )
-        self._folder_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._folder_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         folder_browse = QPushButton("Browse Output Folder")
         folder_browse.setObjectName("SecondaryBtn")
         folder_browse.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -264,7 +269,9 @@ class ViewResultsView(QWidget):
             f"color: {TEXT_MUTED}; font-size: 12px; background: {SURFACE_2}; "
             f"border: 1px solid {BORDER_COLOR}; border-radius: 7px; padding: 7px 12px;"
         )
-        self._rawfile_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._rawfile_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         raw_browse = QPushButton("Browse Raw File")
         raw_browse.setObjectName("SecondaryBtn")
         raw_browse.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -308,7 +315,11 @@ class ViewResultsView(QWidget):
 
     def _load_results(self):
         if not self._folder or not self._rawfile:
-            QMessageBox.warning(self, "Missing Paths", "Please select both an output folder and a raw file.")
+            QMessageBox.warning(
+                self,
+                "Missing Paths",
+                "Please select both an output folder and a raw file.",
+            )
             return
         self.load_from_paths(self._folder, self._rawfile)
 
@@ -319,7 +330,9 @@ class ViewResultsView(QWidget):
                 self._parameters = json.load(f)
 
             with h5py.File(rawfile, "r") as hdf:
-                self.datashape = hdf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"].shape
+                self.datashape = hdf[
+                    "Data/Recording_0/AnalogStream/Stream_0/ChannelData"
+                ].shape
 
             self._folder = folder
             self._rawfile = rawfile
@@ -337,7 +350,6 @@ class ViewResultsView(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "Load Error", f"Could not load results:\n{exc}")
 
-
     def _build_results_area(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -352,12 +364,20 @@ class ViewResultsView(QWidget):
         info_layout.setSpacing(24)
 
         self._folder_info = _ElidedPathLabel("")
-        self._folder_info.setStyleSheet(f"font-size: 12px; color: {TEXT_SECONDARY}; background: transparent")
-        self._folder_info.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._folder_info.setStyleSheet(
+            f"font-size: 12px; color: {TEXT_SECONDARY}; background: transparent"
+        )
+        self._folder_info.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
 
         self._rawfile_info = _ElidedPathLabel("")
-        self._rawfile_info.setStyleSheet(f"font-size: 12px; color: {TEXT_SECONDARY}; background: transparent")
-        self._rawfile_info.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._rawfile_info.setStyleSheet(
+            f"font-size: 12px; color: {TEXT_SECONDARY}; background: transparent"
+        )
+        self._rawfile_info.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
 
         info_layout.addWidget(self._folder_info, 1)
         info_layout.addWidget(self._rawfile_info, 1)
@@ -389,7 +409,11 @@ class ViewResultsView(QWidget):
                 text-decoration: underline;
             }}
         """)
-        warn_btn.clicked.connect(lambda: webbrowser.open("https://cureq.github.io/MEAlytics/supported_plates/"))
+        warn_btn.clicked.connect(
+            lambda: webbrowser.open(
+                "https://cureq.github.io/MEAlytics/supported_plates/"
+            )
+        )
         layout.addWidget(warn_btn)
 
         # Tab widget
@@ -435,7 +459,9 @@ class ViewResultsView(QWidget):
 
         self._sev_well_label = QLabel("Well 1 selected")
         self._sev_well_label.setObjectName("StatusBadge")
-        left_layout.addWidget(self._sev_well_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        left_layout.addWidget(
+            self._sev_well_label, alignment=Qt.AlignmentFlag.AlignLeft
+        )
 
         outer.addWidget(left_panel)
 
@@ -450,7 +476,9 @@ class ViewResultsView(QWidget):
         right_layout.addWidget(select_electrode_label)
 
         self._sev_electrode_grid = _ElectrodeGrid(self._n_electrodes)
-        self._sev_electrode_grid.electrode_clicked.connect(self._open_single_electrode_window)
+        self._sev_electrode_grid.electrode_clicked.connect(
+            self._open_single_electrode_window
+        )
         scroll_elec = QScrollArea()
         scroll_elec.setWidgetResizable(True)
         scroll_elec.setFrameShape(QFrame.Shape.NoFrame)
@@ -458,7 +486,9 @@ class ViewResultsView(QWidget):
         right_layout.addWidget(scroll_elec)
 
         hint = QLabel("Click an electrode to open its visualisation.")
-        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        hint.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; background: transparent"
+        )
         right_layout.addWidget(hint)
 
         outer.addWidget(right_panel)
@@ -474,7 +504,9 @@ class ViewResultsView(QWidget):
 
     def _open_single_electrode_window(self, electrode: int):
         title = f"MEAlytics — Well {self._selected_well} · Electrode {electrode}"
-        dlg = SingleElectrodeView(self._folder, self._rawfile, self._selected_well, electrode)
+        dlg = SingleElectrodeView(
+            self._folder, self._rawfile, self._selected_well, electrode
+        )
         self._registry.register(dlg)
         self._close_all_btn.setVisible(True)
         dlg.show()
@@ -534,8 +566,15 @@ class ViewResultsView(QWidget):
         return tab
 
     def _open_heatmap_window(self):
-        xwells, ywells =  _well_grid(self._n_wells)
-        dlg = HeatmapFrame(self.datashape, self._parameters, xwells, ywells, self._folder, _electrode_grid)
+        xwells, ywells = _well_grid(self._n_wells)
+        dlg = HeatmapFrame(
+            self.datashape,
+            self._parameters,
+            xwells,
+            ywells,
+            self._folder,
+            _electrode_grid,
+        )
         self._registry.register(dlg)
         self._close_all_btn.setVisible(True)
         dlg.show()

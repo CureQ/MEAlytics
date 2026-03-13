@@ -1,37 +1,46 @@
 import os
 import webbrowser
 
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QWidget, QSizePolicy,
-    QSlider, QFileDialog, QProgressBar,
-)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QPalette, QColor
-
-from MEAlytics.GUI._theme import (
-    SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR,
-    ACCENT, ACCENT_MUTED, ACCENT_HOVER,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    DARK_BG, WARNING, DANGER,
-    make_primary_btn, make_secondary_btn, make_label,
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
 )
 
 from MEAlytics.core._heatmap import (
-    cmap_creation, create_placeholder_figure,
-    data_prepper, make_hm, make_hm_img,
+    cmap_creation,
+    create_placeholder_figure,
+    data_prepper,
+    make_hm,
+    make_hm_img,
 )
+from MEAlytics.GUI._theme import (
+    SURFACE_2,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    WARNING,
+    make_primary_btn,
+    make_secondary_btn,
+)
+
 
 class DataPrepWorker(QThread):
     finished = pyqtSignal(object)
-    error    = pyqtSignal(str)
+    error = pyqtSignal(str)
 
-    def __init__(self, h5_file: str, parameters: dict, hm_vars: dict,
-                 electrode_grid_fn):
+    def __init__(
+        self, h5_file: str, parameters: dict, hm_vars: dict, electrode_grid_fn
+    ):
         super().__init__()
         self._h5_file = h5_file
         self._parameters = parameters
@@ -53,12 +62,12 @@ class DataPrepWorker(QThread):
 
 class FullHeatmapWorker(QThread):
     finished = pyqtSignal(object)
-    error    = pyqtSignal(str)
+    error = pyqtSignal(str)
 
     def __init__(self, hm_vars: dict, classes: dict, colour_classes: dict):
         super().__init__()
-        self._hm_vars        = hm_vars
-        self._classes        = classes
+        self._hm_vars = hm_vars
+        self._classes = classes
         self._colour_classes = colour_classes
 
     def run(self) -> None:
@@ -68,15 +77,16 @@ class FullHeatmapWorker(QThread):
         except Exception as exc:
             self.error.emit(str(exc))
 
+
 class ProgressDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Preparing data")
         self.setFixedSize(400, 70)
         self.setWindowFlags(
-            Qt.WindowType.Dialog |
-            Qt.WindowType.CustomizeWindowHint |
-            Qt.WindowType.WindowTitleHint
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
         )
 
         layout = QVBoxLayout(self)
@@ -87,44 +97,57 @@ class ProgressDialog(QDialog):
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl)
 
+
 class HeatmapFrame(QDialog):
-    def __init__(self, datashape, parameters: dict, xwells: int, ywells: int, folder: str, electrode_grid_fn):
+    def __init__(
+        self,
+        datashape,
+        parameters: dict,
+        xwells: int,
+        ywells: int,
+        folder: str,
+        electrode_grid_fn,
+    ):
         super().__init__()
         self.setWindowTitle("Heatmap")
         self.resize(1100, 720)
         self.setMinimumSize(800, 500)
 
-        self._parameters       = parameters
-        self._folder           = folder
-        self._h5_file          = os.path.join(folder, "output_values.h5")
+        self._parameters = parameters
+        self._folder = folder
+        self._h5_file = os.path.join(folder, "output_values.h5")
         self._electrode_grid_fn = electrode_grid_fn
 
         self._hm_vars: dict = {
-            "fps":              10,
-            "Num frames":       int(parameters['measurements'] / parameters['sampling rate'] * 10),
-            "df":               None,
-            "n_Wells":          None,
-            "n_Electrodes":     None,
-            "v_max":            None,
-            "Size":             None,
-            "Precomputed Max":  None,
-            "Rows":             ywells,
-            "Cols":             xwells,
-            "cmap":             None,
-            "max_df":           None,
-            "last_hm":          None,
-            "background_color": '#1a1a1a',
+            "fps": 10,
+            "Num frames": int(
+                parameters["measurements"] / parameters["sampling rate"] * 10
+            ),
+            "df": None,
+            "n_Wells": None,
+            "n_Electrodes": None,
+            "v_max": None,
+            "Size": None,
+            "Precomputed Max": None,
+            "Rows": ywells,
+            "Cols": xwells,
+            "cmap": None,
+            "max_df": None,
+            "last_hm": None,
+            "background_color": "#1a1a1a",
         }
 
         self._classes: dict = {
-            "Unknown": list(range(0, int(datashape[0] / parameters["electrode amount"]) + 1))
+            "Unknown": list(
+                range(0, int(datashape[0] / parameters["electrode amount"]) + 1)
+            )
         }
         self._colour_classes: dict = {"Unknown": "grey"}
 
-        self._anim        = None
-        self._canvas      = None
+        self._anim = None
+        self._canvas = None
         self._is_dragging = False
-        self._worker      = None
+        self._worker = None
 
         self._hm_vars["cmap"] = cmap_creation()
 
@@ -180,7 +203,9 @@ class HeatmapFrame(QDialog):
             f"padding: 7px 12px; font-size: 12px; text-align: left;"
         )
         warn_btn.clicked.connect(
-            lambda: webbrowser.open_new("https://cureq.github.io/MEAlytics/supported_plates/")
+            lambda: webbrowser.open_new(
+                "https://cureq.github.io/MEAlytics/supported_plates/"
+            )
         )
         plot_col.addWidget(warn_btn)
 
@@ -205,7 +230,9 @@ class HeatmapFrame(QDialog):
         self._btn_animate = make_secondary_btn("Show Heatmap")
         self._btn_animate.setEnabled(False)
         self._btn_animate.clicked.connect(
-            lambda: self._start_animation(self._hm_vars, self._classes, self._colour_classes)
+            lambda: self._start_animation(
+                self._hm_vars, self._classes, self._colour_classes
+            )
         )
         ctrl_layout.addWidget(self._btn_animate)
 
@@ -293,11 +320,13 @@ class HeatmapFrame(QDialog):
     def _on_worker_error(self, message: str) -> None:
         print(f"Worker error: {message}")
         self._btn_process.setEnabled(True)
-        if hasattr(self, '_progress_dlg') and self._progress_dlg:
+        if hasattr(self, "_progress_dlg") and self._progress_dlg:
             self._progress_dlg.accept()
             self._progress_dlg = None
 
-    def _start_animation(self, vars_: dict, classes: dict, colour_classes: dict) -> None:
+    def _start_animation(
+        self, vars_: dict, classes: dict, colour_classes: dict
+    ) -> None:
         if self._anim is not None:
             self._anim.event_source.stop()
             self._anim = None
@@ -346,7 +375,7 @@ class HeatmapFrame(QDialog):
             self._anim.event_source.start()
 
     def _on_slider_change(self, value: int) -> None:
-        if self._is_dragging and hasattr(self, '_update_func'):
+        if self._is_dragging and hasattr(self, "_update_func"):
             self._update_func(value)
             self._canvas.draw_idle()
 

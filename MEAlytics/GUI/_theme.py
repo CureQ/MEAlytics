@@ -1,27 +1,21 @@
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QStackedWidget, QFileDialog,
-    QProgressBar, QTextEdit, QScrollArea, QSizePolicy, QSpacerItem,
-    QMessageBox, QLineEdit, QGridLayout, QSplitter
-)
-from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap, QPainter, QBrush
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QSizePolicy
 
 # Default
-DARK_BG        = "#0f1117"
-SURFACE_1      = "#161b27"
-SURFACE_2      = "#1c2333"
-SURFACE_3      = "#232b3e"
-BORDER_COLOR   = "#2a3450"
-ACCENT         = "#3d8ef0"
-ACCENT_HOVER   = "#5aa3f7"
-ACCENT_MUTED   = "#1e3a6e"
-SUCCESS        = "#22c55e"
-WARNING        = "#f59e0b"
-DANGER         = "#ef4444"
-TEXT_PRIMARY   = "#e8edf5"
+DARK_BG = "#0f1117"
+SURFACE_1 = "#161b27"
+SURFACE_2 = "#1c2333"
+SURFACE_3 = "#232b3e"
+BORDER_COLOR = "#2a3450"
+ACCENT = "#3d8ef0"
+ACCENT_HOVER = "#5aa3f7"
+ACCENT_MUTED = "#1e3a6e"
+SUCCESS = "#22c55e"
+WARNING = "#f59e0b"
+DANGER = "#ef4444"
+TEXT_PRIMARY = "#e8edf5"
 TEXT_SECONDARY = "#9da5b4"
-TEXT_MUTED     = "#4a5568"
+TEXT_MUTED = "#4a5568"
 
 # Dark orange
 # DARK_BG = "#0e0e0e"
@@ -500,7 +494,8 @@ _BTN_STYLE_SELECTED = f"""
     }}
 """
 
-SIDEBAR_WIDTH  = 220
+SIDEBAR_WIDTH = 220
+
 
 # Helper functions
 def make_label(text, object_name="", parent=None):
@@ -509,11 +504,13 @@ def make_label(text, object_name="", parent=None):
         lbl.setObjectName(object_name)
     return lbl
 
+
 def make_divider():
     d = QFrame()
     d.setObjectName("Divider")
     d.setFrameShape(QFrame.Shape.HLine)
     return d
+
 
 def icon_text_btn(icon_char, label, object_name="NavBtn"):
     """Return a sidebar button with icon + text."""
@@ -525,12 +522,14 @@ def icon_text_btn(icon_char, label, object_name="NavBtn"):
     btn.setMinimumHeight(40)
     return btn
 
+
 def make_primary_btn(label: str, parent=None) -> QPushButton:
     btn = QPushButton(label, parent)
     btn.setObjectName("PrimaryBtn")
     btn.setMinimumHeight(38)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     return btn
+
 
 def make_secondary_btn(label: str, parent=None) -> QPushButton:
     btn = QPushButton(label, parent)
