@@ -61,17 +61,17 @@ nav:
   - API Reference:
         - MEA: reference/MEAlytics/mea.md
         - GUI Module:
-            - Analysis Tool: reference/MEAlytics/GUI/mea_analysis_tool.md
-            - Batch Processing: reference/MEAlytics/GUI/_batch_processing.md
+            - MEA Analysis Tool: reference/MEAlytics/GUI/mea_analysis_tool.md
             - Compress Files: reference/MEAlytics/GUI/_compress_files.md
             - Exclude Electrodes: reference/MEAlytics/GUI/_exclude_electrodes.md
             - Heatmap: reference/MEAlytics/GUI/_heatmap.md
             - Parameters: reference/MEAlytics/GUI/_parameters.md
             - Plotting: reference/MEAlytics/GUI/_plotting.md
-            - Process File: reference/MEAlytics/GUI/_process_file.md
             - Single Electrode View: reference/MEAlytics/GUI/_single_electrode_view.md
             - View Results: reference/MEAlytics/GUI/_view_results.md
             - Whole Well View: reference/MEAlytics/GUI/_whole_well_view.md
+            - Helpers: reference/MEAlytics/GUI/_helpers.md
+            - Theme: reference/MEAlytics/GUI/_theme.md
         - Core Module:
             - Bandpass: reference\MEAlytics\core\_bandpass.md
             - Burst Detection: reference/MEAlytics/core/_burst_detection.md
