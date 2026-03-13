@@ -5,7 +5,8 @@
 MEAlytics is an open-source Python tool for processing Microelectrode Array (MEA) data.<br>
 This repository is maintained by the Amsterdam University of Applied Sciences (AUAS).<br>
 
-![](https://github.com/user-attachments/assets/c8183761-5aa5-45fa-985a-2332cf8d5415)
+### Demo
+https://github.com/user-attachments/assets/c8183761-5aa5-45fa-985a-2332cf8d5415
 
 #### [For more information on functionality and usage, please refer to the documentation](https://cureq.github.io/MEAlytics/)
 
