@@ -41,8 +41,6 @@ def well_electrodes_kde(outputpath, well, parameters, bandwidth=1):
     measurements = parameters['measurements']
     hertz = parameters['sampling rate']
 
-    # Where to find the spike-data
-    spikepath=f'{outputpath}/spike_values'
     data_time=measurements/hertz
 
     # Create matplotlib figure

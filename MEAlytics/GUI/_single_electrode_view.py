@@ -1,380 +1,441 @@
-# Imports
 import os
-from functools import partial
 import json
 import copy
-from tkinter import *
 
-# External libraries
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  NavigationToolbar2Tk) 
 import h5py
-import customtkinter as ctk
-from CTkToolTip import *
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 
-# Package imports
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QPushButton, QLineEdit, QCheckBox, QComboBox,
+    QFrame, QTabWidget, QWidget, QSizePolicy, QScrollArea,
+    QGroupBox, QSpacerItem,
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPalette, QColor
+
+from MEAlytics.GUI._theme import (
+    SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR,
+    ACCENT, ACCENT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    DARK_BG, TOOLBAR_STYLESHEET,
+    make_label, make_divider, make_primary_btn, make_secondary_btn,
+)
+from MEAlytics.GUI._helpers import _set_entry, _get_float, _get_int
+
 from MEAlytics.core._bandpass import butter_bandpass_filter
 from MEAlytics.core._threshold import fast_threshold
 from MEAlytics.core._spike_validation import spike_validation
 from MEAlytics.core._burst_detection import burst_detection
 
-class single_electrode_view(ctk.CTkToplevel):
-    """
-    Allows the user to inpect the spike and burst detection on a single electrode.
-    """
-    def __init__(self, parent, folder, rawfile, well, electrode):
+def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
+    group = QGroupBox(title)
+    layout = QGridLayout()
+    layout.setSpacing(8)
+    layout.setContentsMargins(16, 18, 16, 12)
+    group.setLayout(layout)
+
+    fields: dict[str, QLineEdit] = {}
+    col_pairs = [(0, 1), (2, 3)]
+
+    grid_row = 0
+    col_idx = 0
+    for label_text, key in rows:
+        lbl_col, entry_col = col_pairs[col_idx]
+
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+        layout.addWidget(lbl, grid_row, lbl_col)
+
+        entry = QLineEdit()
+        entry.setMinimumWidth(100)
+        layout.addWidget(entry, grid_row, entry_col)
+        fields[key] = entry
+
+        col_idx += 1
+        if col_idx >= len(col_pairs):
+            col_idx = 0
+            grid_row += 1
+
+    return group, fields
+
+class SingleElectrodeView(QDialog):
+    def __init__(self, folder: str, rawfile: str, well: int, electrode: int, parent=None):
         super().__init__(parent)
-        self.title(f"Well: {well}, Electrode: {electrode}")
+        self.setWindowTitle(f"Well: {well} - Electrode: {electrode}")
+        self.resize(1280, 860)
+        self.setMinimumSize(900, 600)
 
-        self.tab_frame=ctk.CTkTabview(self, anchor='nw')
-        self.tab_frame.pack(fill='both', expand=True, pady=10, padx=10)
-
-        self.grid_rowconfigure(0, weight=1)
-
-        self.tab_frame.add("Spike Detection")
-        self.tab_frame.tab("Spike Detection").grid_columnconfigure(0, weight=1)
-        self.tab_frame.tab("Spike Detection").grid_rowconfigure(0, weight=1)
-
-        self.tab_frame.add("Burst Detection")
-        self.tab_frame.tab("Burst Detection").grid_columnconfigure(0, weight=1)
-        self.tab_frame.tab("Burst Detection").grid_rowconfigure(0, weight=1)
-
-        # Set the icon with a little delay, otherwise it does not work
-        try:
-            self.after(250, lambda: self.iconbitmap(os.path.join(parent.icon_path)))
-        except Exception as error:
-            print(error)
-
-        self.parameters=open(f"{folder}/parameters.json")
-        self.parameters=json.load(self.parameters)
+        with open(os.path.join(folder, "parameters.json")) as f:
+            self.parameters = json.load(f)
         self.parameters["output hdf file"] = os.path.join(folder, "output_values.h5")
-        self.electrode_nr=(well-1)*self.parameters["electrode amount"]+electrode-1
+        self.electrode_nr = (well - 1) * self.parameters["electrode amount"] + electrode - 1
+        self.rawfile = rawfile
+        self.folder = folder
 
-        self.rawfile=rawfile
-        self.folder=folder
-        
-        """Spike detection"""
-        # Create a frame for the plots
-        self.electrode_plot_frame=ctk.CTkFrame(master=self.tab_frame.tab("Spike Detection"))
-        self.electrode_plot_frame.grid(row=0, column=0, sticky='nesw')
-        self.electrode_plot_frame.grid_columnconfigure(0, weight=1)
-        self.electrode_plot_frame.grid_rowconfigure(0, weight=1)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(0)
 
-        # Create a frame for the settings
-        electrode_settings_frame=ctk.CTkFrame(master=self.tab_frame.tab("Spike Detection"))
-        electrode_settings_frame.grid(row=1, column=0)
-        electrode_settings_frame.grid_columnconfigure(0, weight=1)
-        electrode_settings_frame.grid_columnconfigure(1, weight=1)
-        electrode_settings_frame.grid_columnconfigure(2, weight=1)
+        self.tabs = QTabWidget()
+        root_layout.addWidget(self.tabs)
 
-        self.tab_frame.tab("Spike Detection").grid_columnconfigure(0, weight=1)
-        self.tab_frame.tab("Spike Detection").grid_rowconfigure(0, weight=1)
+        self._build_spike_tab()
+        self._build_burst_tab()
 
-        # Bandpass options
-        bp_options_ew_frame = ctk.CTkFrame(master=electrode_settings_frame)
-        bp_options_ew_frame.grid(row=0, column=0, pady=10, padx=10)
-        bandpass_options_label=ctk.CTkLabel(master=bp_options_ew_frame, text='Bandpass Parameters', font=ctk.CTkFont(size=25)).grid(row=0, column=0, pady=10, padx=10, sticky='w', columnspan=2)
+        self._reset_spike()
+        self._burst_reset()
 
-        lowcut_label=ctk.CTkLabel(master=bp_options_ew_frame, text='Low cutoff').grid(row=1, column=0, pady=10, padx=10, sticky='w')
-        self.lowcut_ew_entry=ctk.CTkEntry(master=bp_options_ew_frame)
-        self.lowcut_ew_entry.grid(row=1, column=1, pady=10, padx=10, sticky='w')
+    def _build_spike_tab(self) -> None:
+        spike_tab = QWidget()
+        tab_layout = QVBoxLayout(spike_tab)
+        tab_layout.setContentsMargins(16, 16, 16, 16)
+        tab_layout.setSpacing(12)
 
-        highcut_label=ctk.CTkLabel(master=bp_options_ew_frame, text='High cutoff').grid(row=2, column=0, sticky='w', pady=10, padx=10)
-        self.highcut_ew_entry=ctk.CTkEntry(master=bp_options_ew_frame)
-        self.highcut_ew_entry.grid(row=2, column=1, pady=10, padx=10, sticky='w')
+        self._spike_plot_container = QFrame()
+        self._spike_plot_container.setObjectName("Card")
+        self._spike_plot_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._spike_plot_layout = QVBoxLayout(self._spike_plot_container)
+        self._spike_plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._spike_plot_layout.setSpacing(0)
+        tab_layout.addWidget(self._spike_plot_container, stretch=1)
 
-        order_label=ctk.CTkLabel(master=bp_options_ew_frame, text='Order').grid(row=3, column=0, sticky='w', pady=10, padx=10)
-        self.order_ew_entry=ctk.CTkEntry(master=bp_options_ew_frame)
-        self.order_ew_entry.grid(row=3, column=1, pady=10, padx=10, sticky='w')
+        tab_layout.addWidget(make_divider())
 
-        # Threshold options
-        th_options_ew_frame = ctk.CTkFrame(master=electrode_settings_frame)
-        th_options_ew_frame.grid(row=0, column=1, pady=10, padx=10)
-        threshold_options_label=ctk.CTkLabel(master=th_options_ew_frame, text='Threshold Parameters', font=ctk.CTkFont(size=25)).grid(row=0, column=0, pady=10, padx=10, sticky='w', columnspan=2)
-        
-        stdevmultiplier_label=ctk.CTkLabel(master=th_options_ew_frame, text='Standard deviation multiplier').grid(row=1, column=0, pady=10, padx=10, sticky='w')
-        self.stdevmultiplier_ew_entry=ctk.CTkEntry(master=th_options_ew_frame)
-        self.stdevmultiplier_ew_entry.grid(row=1, column=1, pady=10, padx=10, sticky='w')
+        settings_row = QHBoxLayout()
+        settings_row.setSpacing(12)
 
-        RMSmultiplier_label=ctk.CTkLabel(master=th_options_ew_frame, text='RMS multiplier').grid(row=2, column=0, sticky='w', pady=10, padx=10)
-        self.RMSmultiplier_ew_entry=ctk.CTkEntry(master=th_options_ew_frame)
-        self.RMSmultiplier_ew_entry.grid(row=2, column=1, pady=10, padx=10, sticky='w')
+        bp_group, bp_fields = _make_group("Bandpass Parameters", [
+            ("Low cutoff",  "low cutoff"),
+            ("High cutoff", "high cutoff"),
+            ("Order",       "order"),
+        ])
+        self._lowcut_entry = bp_fields["low cutoff"]
+        self._highcut_entry = bp_fields["high cutoff"]
+        self._order_entry = bp_fields["order"]
+        settings_row.addWidget(bp_group)
 
-        thpn_label=ctk.CTkLabel(master=th_options_ew_frame, text='Threshold portion').grid(row=3, column=0, sticky='w', pady=10, padx=10)
-        self.thpn_ew_entry=ctk.CTkEntry(master=th_options_ew_frame)
-        self.thpn_ew_entry.grid(row=3, column=1, pady=10, padx=10, sticky='w')
+        # Threshold group
+        th_group, th_fields = _make_group("Threshold Parameters", [
+            ("Std dev multiplier", "standard deviation multiplier"),
+            ("RMS multiplier",     "rms multiplier"),
+            ("Threshold portion",  "threshold portion"),
+        ])
+        self._stdev_entry  = th_fields["standard deviation multiplier"]
+        self._rms_entry    = th_fields["rms multiplier"]
+        self._thpn_entry   = th_fields["threshold portion"]
+        settings_row.addWidget(th_group)
 
-        # Spike validation options
-        val_options_ew_frame = ctk.CTkFrame(master=electrode_settings_frame)
-        val_options_ew_frame.grid(row=0, column=2, pady=10, padx=10)
-        spike_val_options_label=ctk.CTkLabel(master=val_options_ew_frame, text='Spike Detection Parameters', font=ctk.CTkFont(size=25)).grid(row=0, column=0, pady=10, padx=10, sticky='w', columnspan=4)
+        val_group = QGroupBox("Spike Detection Parameters")
+        val_layout = QGridLayout()
+        val_layout.setSpacing(8)
+        val_layout.setContentsMargins(16, 18, 16, 12)
+        val_group.setLayout(val_layout)
 
-        def ew_option_selected(event):
-            self.set_states()
-                
-        validation_options = ['Noisebased', 'none']
-        self.validation_method_var = ctk.StringVar(value=validation_options[0])
-        validation_method_label = ctk.CTkLabel(master=val_options_ew_frame, text="Spike validation method:")
-        validation_method_label.grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        self.validation_method_entry = ctk.CTkOptionMenu(val_options_ew_frame, variable=self.validation_method_var, values=validation_options, command=ew_option_selected)
-        self.validation_method_entry.grid(row=1, column=1, padx=10, pady=10, sticky='nesw')
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent")
+            return l
 
-        rfpd_label=ctk.CTkLabel(master=val_options_ew_frame, text='Refractory period').grid(row=2, column=0, pady=10, padx=10, sticky='w')
-        self.rfpd_ew_entry=ctk.CTkEntry(master=val_options_ew_frame)
-        self.rfpd_ew_entry.grid(row=2, column=1, pady=10, padx=10, sticky='w')
+        val_layout.addWidget(_lbl("Spike validation method:"), 0, 0)
+        self._validation_combo = QComboBox()
+        self._validation_combo.addItems(["Noisebased", "none"])
+        self._validation_combo.currentTextChanged.connect(self._set_states)
+        val_layout.addWidget(self._validation_combo, 0, 1)
 
-        exittime_label=ctk.CTkLabel(master=val_options_ew_frame, text='Exit time').grid(row=3, column=0, pady=10, padx=10, sticky='w')
-        self.exittime_ew_entry=ctk.CTkEntry(master=val_options_ew_frame)
-        self.exittime_ew_entry.grid(row=3, column=1, pady=10, padx=10, sticky='w')
+        val_layout.addWidget(_lbl("Refractory period:"), 1, 0)
+        self._rfpd_entry = QLineEdit()
+        val_layout.addWidget(self._rfpd_entry, 1, 1)
 
-        dropamplitude_label=ctk.CTkLabel(master=val_options_ew_frame, text='Drop amplitude').grid(row=1, column=2, pady=10, padx=10, sticky='w')
-        self.dropamplitude_ew_entry=ctk.CTkEntry(master=val_options_ew_frame)
-        self.dropamplitude_ew_entry.grid(row=1, column=3, pady=10, padx=10, sticky='w')
+        val_layout.addWidget(_lbl("Drop amplitude:"), 1, 2)
+        self._dropamplitude_entry = QLineEdit()
+        val_layout.addWidget(self._dropamplitude_entry, 1, 3)
 
-        maxdrop_label=ctk.CTkLabel(master=val_options_ew_frame, text='Max drop').grid(row=2, column=2, pady=10, padx=10, sticky='w')
-        self.maxdrop_ew_entry=ctk.CTkEntry(master=val_options_ew_frame)
-        self.maxdrop_ew_entry.grid(row=2, column=3, pady=10, padx=10, sticky='w')
+        val_layout.addWidget(_lbl("Exit time:"), 2, 0)
+        self._exittime_entry = QLineEdit()
+        val_layout.addWidget(self._exittime_entry, 2, 1)
 
-        plot_rectangle_label=ctk.CTkLabel(master=val_options_ew_frame, text='Plot validation')
-        plot_rectangle_label.grid(row=3, column=2, pady=10, padx=10, sticky='w')
-        plot_rectangle_tooltip = CTkToolTip(plot_rectangle_label, message='Display the rectangles that have been used to validate the spikes. Warning: Plotting these is computationally expensive and might take a while', wraplength=parent.tooltipwraplength)
-        self.plot_rectangle=ctk.BooleanVar(value=False)
-        self.plot_rectangle.set(False)
-        self.plot_rectangle_ew_entry=ctk.CTkCheckBox(master=val_options_ew_frame, variable=self.plot_rectangle, text='')
-        self.plot_rectangle_ew_entry.grid(row=3, column=3, pady=10, padx=10, sticky='w')
+        val_layout.addWidget(_lbl("Max drop:"), 2, 2)
+        self._maxdrop_entry = QLineEdit()
+        val_layout.addWidget(self._maxdrop_entry, 2, 3)
 
-        # Set values and create initial plot
-        self.reset(parent)
+        plot_rect_lbl = _lbl("Plot validation rectangles:")
+        plot_rect_lbl.setToolTip(
+            "Display the rectangles used to validate the spikes.\n"
+            "Warning: computationally expensive — may take a while."
+        )
+        val_layout.addWidget(plot_rect_lbl, 3, 0)
+        self._plot_rectangle_cb = QCheckBox()
+        val_layout.addWidget(self._plot_rectangle_cb, 3, 1)
 
-        # Buttons
-        update_plot_button=ctk.CTkButton(master=electrode_settings_frame, text='Update plot', command=partial(self.update_plot, parent))
-        update_plot_button.grid(row=1, column=0, pady=10, padx=10, sticky='nesw')
-        electrode_plot_disclaimer = CTkToolTip(update_plot_button, y_offset=-100, wraplength=400, message='These settings are for visualisation purposes only, they will not affect the current analysis outcomes, or further steps such as burst or network burst detection. These options are solely here to show how they could alter the analysis.')
+        settings_row.addWidget(val_group)
+        tab_layout.addLayout(settings_row)
 
-        reset_button = ctk.CTkButton(master=electrode_settings_frame, text='Reset', command=partial(self.reset, parent))
-        reset_button.grid(row=1, column=1, pady=10, padx=10, sticky='nesw')
+        action_bar = QFrame()
+        action_bar.setObjectName("Card")
+        bar_layout = QHBoxLayout(action_bar)
+        bar_layout.setContentsMargins(16, 10, 16, 10)
+        bar_layout.setSpacing(10)
 
-        
-        """Burst Detection"""
-        # Create the initial burst plot
-        self.burstplotsframe=ctk.CTkFrame(master=self.tab_frame.tab("Burst Detection"))
-        self.burstplotsframe.grid(row=0, column=0, sticky='nesw')
+        update_btn = make_primary_btn("▶  Update Plot")
+        update_btn.setToolTip(
+            "These settings are for visualisation purposes only, they will not affect "
+            "the current analysis outcomes or further steps such as burst or network burst "
+            "detection. They are solely here to show how parameters could alter the analysis."
+        )
+        update_btn.clicked.connect(self._update_spike_plot)
+        bar_layout.addWidget(update_btn)
 
-        burstsettingsframe=ctk.CTkFrame(master=self.tab_frame.tab("Burst Detection"), fg_color=parent.gray_6)
-        burstsettingsframe.grid(row=1, column=0, pady=10, padx=10)
+        reset_btn = make_secondary_btn("↺  Reset")
+        reset_btn.clicked.connect(self._reset_spike)
+        bar_layout.addWidget(reset_btn)
+        bar_layout.addStretch()
 
-        # Burst detection settings
-        burst_options_label=ctk.CTkLabel(master=burstsettingsframe, text='Burst Detection Parameters', font=ctk.CTkFont(size=25)).grid(row=0, column=0, pady=10, padx=10, sticky='w', columnspan=4)
-        minspikes_bw_label=ctk.CTkLabel(master=burstsettingsframe, text='Minimal amount of spikes').grid(row=1, column=0, pady=10, padx=10, sticky='w')
-        self.minspikes_bw_entry=ctk.CTkEntry(master=burstsettingsframe)
-        self.minspikes_bw_entry.grid(row=1, column=1, pady=10, padx=10, sticky='w')
-        def_iv_bw_label=ctk.CTkLabel(master=burstsettingsframe, text='Default interval threshold').grid(row=2, column=0, pady=10, padx=10, sticky='w')
-        self.def_iv_bw_entry=ctk.CTkEntry(master=burstsettingsframe)
-        self.def_iv_bw_entry.grid(row=2, column=1, pady=10, padx=10, sticky='w')
-        max_iv_bw_label=ctk.CTkLabel(master=burstsettingsframe, text='Max interval threshold').grid(row=1, column=2, pady=10, padx=10, sticky='w')
-        self.max_iv_bw_entry=ctk.CTkEntry(master=burstsettingsframe)
-        self.max_iv_bw_entry.grid(row=1, column=3, pady=10, padx=10, sticky='w')
-        kde_bw_bw_label=ctk.CTkLabel(master=burstsettingsframe, text='KDE bandwidth').grid(row=2, column=2, pady=10, padx=10, sticky='w')
-        self.kde_bw_bw_entry=ctk.CTkEntry(master=burstsettingsframe)
-        self.kde_bw_bw_entry.grid(row=2, column=3, pady=10, padx=10, sticky='w')
+        tab_layout.addWidget(action_bar)
+        self.tabs.addTab(spike_tab, "Spike Detection")
 
-        # Burst buttons
-        update_burst_plot_button=ctk.CTkButton(master=burstsettingsframe, text='Update plot', command=partial(self.update_burst_plot, parent))
-        update_burst_plot_button.grid(row=3, column=0, pady=10, padx=10, sticky='nesw', columnspan=2)
-        burst_plot_disclaimer = CTkToolTip(update_burst_plot_button, y_offset=-100, wraplength=400, message='These settings are for visualisation purposes only, they will not affect the current analysis outcomes, or further steps such as network burst detection. These options are solely here to show how they could alter the analysis.')
+    def _build_burst_tab(self) -> None:
+        burst_tab = QWidget()
+        tab_layout = QVBoxLayout(burst_tab)
+        tab_layout.setContentsMargins(16, 16, 16, 16)
+        tab_layout.setSpacing(12)
 
-        reset_burst_button = ctk.CTkButton(master=burstsettingsframe, text='Reset', command=partial(self.burst_reset, parent))
-        reset_burst_button.grid(row=3, column=2, pady=10, padx=10, sticky='nesw', columnspan=2)
+        self._burst_plot_container = QFrame()
+        self._burst_plot_container.setObjectName("Card")
+        self._burst_plot_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._burst_plot_layout = QHBoxLayout(self._burst_plot_container)
+        self._burst_plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._burst_plot_layout.setSpacing(0)
+        tab_layout.addWidget(self._burst_plot_container, stretch=1)
 
-        # Create first plot
-        self.burst_reset(parent)
+        tab_layout.addWidget(make_divider())
 
-    def set_states(self):
-        validation_method = self.validation_method_var.get()
-        if validation_method=='Noisebased':
-            self.exittime_ew_entry.configure(state="normal")
-            self.maxdrop_ew_entry.configure(state="normal")
-            self.dropamplitude_ew_entry.configure(state="normal")
-            self.plot_rectangle_ew_entry.configure(state="normal")
+        burst_group = QGroupBox("Burst Detection Parameters")
+        burst_layout = QGridLayout()
+        burst_layout.setSpacing(8)
+        burst_layout.setContentsMargins(16, 18, 16, 12)
+        burst_group.setLayout(burst_layout)
+
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background:transparent")
+            return l
+
+        burst_layout.addWidget(_lbl("Minimal amount of spikes:"), 0, 0)
+        self._minspikes_entry = QLineEdit()
+        burst_layout.addWidget(self._minspikes_entry, 0, 1)
+
+        burst_layout.addWidget(_lbl("Max interval threshold:"), 0, 2)
+        self._max_iv_entry = QLineEdit()
+        burst_layout.addWidget(self._max_iv_entry, 0, 3)
+
+        burst_layout.addWidget(_lbl("Default interval threshold:"), 1, 0)
+        self._def_iv_entry = QLineEdit()
+        burst_layout.addWidget(self._def_iv_entry, 1, 1)
+
+        burst_layout.addWidget(_lbl("KDE bandwidth:"), 1, 2)
+        self._kde_bw_entry = QLineEdit()
+        burst_layout.addWidget(self._kde_bw_entry, 1, 3)
+
+        tab_layout.addWidget(burst_group)
+
+        action_bar = QFrame()
+        action_bar.setObjectName("Card")
+        bar_layout = QHBoxLayout(action_bar)
+        bar_layout.setContentsMargins(16, 10, 16, 10)
+        bar_layout.setSpacing(10)
+
+        update_btn = make_primary_btn("▶  Update Plot")
+        update_btn.setToolTip(
+            "These settings are for visualisation purposes only, they will not affect "
+            "the current analysis outcomes or further steps such as network burst detection."
+        )
+        update_btn.clicked.connect(self._update_burst_plot)
+        bar_layout.addWidget(update_btn)
+
+        reset_btn = make_secondary_btn("↺  Reset")
+        reset_btn.clicked.connect(self._burst_reset)
+        bar_layout.addWidget(reset_btn)
+        bar_layout.addStretch()
+
+        tab_layout.addWidget(action_bar)
+        self.tabs.addTab(burst_tab, "Burst Detection")
+
+    def _set_states(self) -> None:
+        noise_based = self._validation_combo.currentText() == "Noisebased"
+        for widget in (
+            self._exittime_entry,
+            self._maxdrop_entry,
+            self._dropamplitude_entry,
+            self._plot_rectangle_cb,
+        ):
+            widget.setEnabled(noise_based)
+        if not noise_based:
+            self._plot_rectangle_cb.setChecked(False)
+
+    def _default_spike_values(self) -> None:
+        p = self.parameters
+        _set_entry(self._lowcut_entry,       p["low cutoff"])
+        _set_entry(self._highcut_entry,      p["high cutoff"])
+        _set_entry(self._order_entry,        p["order"])
+        _set_entry(self._stdev_entry,        p["standard deviation multiplier"])
+        _set_entry(self._rms_entry,          p["rms multiplier"])
+        _set_entry(self._thpn_entry,         p["threshold portion"])
+        _set_entry(self._rfpd_entry,         p["refractory period"])
+        _set_entry(self._exittime_entry,     p["exit time"])
+        _set_entry(self._dropamplitude_entry,p["drop amplitude"])
+        _set_entry(self._maxdrop_entry,      p["max drop"])
+        self._plot_rectangle_cb.setChecked(False)
+        idx = self._validation_combo.findText(p["spike validation method"])
+        if idx >= 0:
+            self._validation_combo.setCurrentIndex(idx)
+        self._set_states()
+
+    def _reset_spike(self) -> None:
+        for w in (self._exittime_entry, self._maxdrop_entry,
+                  self._dropamplitude_entry, self._plot_rectangle_cb):
+            w.setEnabled(True)
+        self._default_spike_values()
+        self._set_states()
+        self._update_spike_plot()
+
+    def _update_spike_plot(self) -> None:
+        temp = copy.deepcopy(self.parameters)
+        temp["low cutoff"]                    = _get_int(self._lowcut_entry)
+        temp["high cutoff"]                   = _get_int(self._highcut_entry)
+        temp["order"]                         = _get_int(self._order_entry)
+        temp["standard deviation multiplier"] = _get_float(self._stdev_entry)
+        temp["rms multiplier"]                = _get_float(self._rms_entry)
+        temp["threshold portion"]             = _get_float(self._thpn_entry)
+        temp["refractory period"]             = _get_float(self._rfpd_entry)
+
+        if self._validation_combo.currentText() == "none":
+            temp["drop amplitude"] = 0
         else:
-            self.exittime_ew_entry.configure(state="disabled")
-            self.maxdrop_ew_entry.configure(state="disabled")
-            self.dropamplitude_ew_entry.configure(state="disabled")
-            self.plot_rectangle.set(False)
-            self.plot_rectangle_ew_entry.configure(state="disabled")
+            temp["exit time"]      = _get_float(self._exittime_entry)
+            temp["drop amplitude"] = _get_float(self._dropamplitude_entry)
+            temp["max drop"]       = _get_float(self._maxdrop_entry)
 
-    def plot_single_electrode(self, parent, parameters):
-        with h5py.File(self.rawfile, 'r') as hdf_file:
-            dataset=hdf_file["Data/Recording_0/AnalogStream/Stream_0/ChannelData"]
-            raw_data=dataset[self.electrode_nr]
-        electrode_data=butter_bandpass_filter(raw_data, parameters)
-        threshold=fast_threshold(electrode_data, parameters)
-        fig=spike_validation(data=electrode_data, electrode=self.electrode_nr, threshold=threshold, parameters=parameters, plot_electrodes=True, savedata=False, plot_rectangles=self.plot_rectangle.get())
-        
-        # Check which colorscheme we have to use
-        axiscolour=parent.text_color
-        bgcolor=parent.gray_4
+        temp["output path"] = self.folder
+        self._plot_single_electrode(temp)
 
-        # Set the plot background
-        fig.set_facecolor(bgcolor)
-        ax=fig.axes[0]
-        ax.set_facecolor(bgcolor)
+    def _plot_single_electrode(self, parameters: dict) -> None:
+        with h5py.File(self.rawfile, "r") as hf:
+            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][self.electrode_nr]
 
-        # Change the other colours
-        ax.xaxis.label.set_color(axiscolour)
-        ax.yaxis.label.set_color(axiscolour)
-        for side in ['top', 'bottom', 'left', 'right']:
-            ax.spines[side].set_color(axiscolour)
-        ax.tick_params(axis='x', colors=axiscolour)
-        ax.tick_params(axis='y', colors=axiscolour)
-        ax.set_title(label=ax.get_title(),color=axiscolour)
+        electrode_data = butter_bandpass_filter(raw_data, parameters)
+        threshold = fast_threshold(electrode_data, parameters)
+        fig = spike_validation(
+            data=electrode_data,
+            electrode=self.electrode_nr,
+            threshold=threshold,
+            parameters=parameters,
+            plot_electrodes=True,
+            savedata=False,
+            plot_rectangles=self._plot_rectangle_cb.isChecked(),
+        )
 
-        plot_canvas = FigureCanvasTkAgg(fig, master=self.electrode_plot_frame)  
-        plot_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
-        toolbarframe=ctk.CTkFrame(master=self.electrode_plot_frame, fg_color=parent.primary_1)
-        toolbarframe.grid(row=1, column=0, sticky='s')
-        toolbar = NavigationToolbar2Tk(plot_canvas, toolbarframe)
-        toolbar.config(background=parent.primary_1)
-        toolbar._message_label.config(background=parent.primary_1)
-        for button in toolbar.winfo_children():
-            button.config(background=parent.primary_1)
-        toolbar.update()
-        plot_canvas.draw()
+        self._apply_dark_theme(fig)
+        self._replace_canvas(self._spike_plot_container, self._spike_plot_layout, fig, toolbar=True)
 
-    def update_plot(self, parent):
-        # Get the new parameters from the entry widgets
-        # Create a temporary dict we will give to the plot electrode function
-        temp_parameters=copy.deepcopy(self.parameters)
-        temp_parameters['low cutoff']=int(self.lowcut_ew_entry.get())
-        temp_parameters['high cutoff']=int(self.highcut_ew_entry.get())
-        temp_parameters['order']=int(self.order_ew_entry.get())
-        temp_parameters['standard deviation multiplier']=float(self.stdevmultiplier_ew_entry.get())
-        temp_parameters['rms multiplier']=float(self.RMSmultiplier_ew_entry.get())
-        temp_parameters['threshold portion']=float(self.thpn_ew_entry.get())
-        temp_parameters['refractory period']=float(self.rfpd_ew_entry.get())
-        if str(self.validation_method_var.get())=='none':
-            temp_parameters['drop amplitude']=0
-        else:
-            temp_parameters['exit time']=float(self.exittime_ew_entry.get())
-            temp_parameters['drop amplitude']=float(self.dropamplitude_ew_entry.get())
-            temp_parameters['max drop']=float(self.maxdrop_ew_entry.get())
-        
-        # Update the output folder path, as this might have changed since the original analysis
-        temp_parameters['output path']=self.folder
+    def _default_burst_values(self) -> None:
+        p = self.parameters
+        _set_entry(self._minspikes_entry, p["minimal amount of spikes"])
+        _set_entry(self._def_iv_entry,    p["default interval threshold"])
+        _set_entry(self._max_iv_entry,    p["max interval threshold"])
+        _set_entry(self._kde_bw_entry,    p["burst detection kde bandwidth"])
 
-        # Plot the electrode with the new parameters
-        self.plot_single_electrode(parent, temp_parameters)
+    def _burst_reset(self) -> None:
+        self._default_burst_values()
+        self._update_burst_plot()
 
-    def default_values(self):
-        # Bandpass
-        self.lowcut_ew_entry.delete(0,END)
-        self.lowcut_ew_entry.insert(0,self.parameters["low cutoff"])
-        self.highcut_ew_entry.delete(0,END)
-        self.highcut_ew_entry.insert(0,self.parameters["high cutoff"])
-        self.order_ew_entry.delete(0,END)
-        self.order_ew_entry.insert(0,self.parameters["order"])
-        # Threshold
-        self.stdevmultiplier_ew_entry.delete(0,END)
-        self.stdevmultiplier_ew_entry.insert(0,self.parameters["standard deviation multiplier"])
-        self.RMSmultiplier_ew_entry.delete(0,END)
-        self.RMSmultiplier_ew_entry.insert(0,self.parameters["rms multiplier"])
-        self.thpn_ew_entry.delete(0,END)
-        self.thpn_ew_entry.insert(0,self.parameters["threshold portion"])
-        # Spike validation
-        self.rfpd_ew_entry.delete(0,END)
-        self.rfpd_ew_entry.insert(0,self.parameters["refractory period"])
-        self.exittime_ew_entry.delete(0,END)
-        self.exittime_ew_entry.insert(0,self.parameters["exit time"])
-        self.dropamplitude_ew_entry.delete(0,END)
-        self.dropamplitude_ew_entry.insert(0,self.parameters["drop amplitude"])
-        self.maxdrop_ew_entry.delete(0,END)
-        self.maxdrop_ew_entry.insert(0,self.parameters["max drop"])
-        self.plot_rectangle.set(False)
-        self.validation_method_var.set(self.parameters['spike validation method'])
-        self.set_states()
-    
-    def reset(self, parent):
-        # First, enable all the possibly disabled entries so we can alter the values
-        self.exittime_ew_entry.configure(state="normal")
-        self.maxdrop_ew_entry.configure(state="normal")
-        self.dropamplitude_ew_entry.configure(state="normal")
-        self.plot_rectangle_ew_entry.configure(state="normal")
-        # Insert the new values
-        self.default_values()
-        # Update the availability of certain entries
-        self.set_states()
-        # Update the plot
-        self.update_plot(parent)
+    def _update_burst_plot(self) -> None:
+        temp = copy.deepcopy(self.parameters)
+        temp["minimal amount of spikes"]    = _get_int(self._minspikes_entry)
+        temp["default interval threshold"]  = _get_float(self._def_iv_entry)
+        temp["max interval threshold"]      = _get_float(self._max_iv_entry)
+        temp["burst detection kde bandwidth"] = _get_float(self._kde_bw_entry)
+        temp["output path"] = self.folder
+        self._plot_burst_detection(temp)
 
-    def plot_burst_detection(self, parent, parameters):
-        with h5py.File(self.rawfile, 'r') as hdf_file:
-            dataset=hdf_file["Data/Recording_0/AnalogStream/Stream_0/ChannelData"]
-            raw_data=dataset[self.electrode_nr]
-        electrode_data=butter_bandpass_filter(raw_data, parameters)
-        KDE_fig, burst_fig = burst_detection(data=electrode_data, electrode=self.electrode_nr, parameters=parameters, plot_electrodes=True, savedata=False)
-        
-        # Check which colorscheme we have to use
-        axiscolour=parent.text_color
-        bgcolor=parent.gray_4
+    def _plot_burst_detection(self, parameters: dict) -> None:
+        with h5py.File(self.rawfile, "r") as hf:
+            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][self.electrode_nr]
 
-        for fig in [KDE_fig, burst_fig]:
-            fig.set_facecolor(bgcolor)
-            ax=fig.axes[0]
-            ax.set_facecolor(bgcolor)
-            # Change the other colours
-            ax.xaxis.label.set_color(axiscolour)
-            ax.yaxis.label.set_color(axiscolour)
-            for side in ['top', 'bottom', 'left', 'right']:
-                ax.spines[side].set_color(axiscolour)
-            ax.tick_params(axis='x', colors=axiscolour)
-            ax.tick_params(axis='y', colors=axiscolour)
-            ax.set_title(label=ax.get_title(),color=axiscolour)
-        
-        # Plot the raw burst plot
-        burst_canvas = FigureCanvasTkAgg(burst_fig, master=self.burstplotsframe)  
-        burst_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
-        toolbarframe=ctk.CTkFrame(master=self.burstplotsframe)
-        toolbarframe.grid(row=1, column=0, sticky='s', columnspan=2)
-        toolbar = NavigationToolbar2Tk(burst_canvas, toolbarframe)
-        toolbar.config(background=parent.primary_1)
-        toolbar._message_label.config(background=parent.primary_1)
-        for button in toolbar.winfo_children():
-            button.config(background=parent.primary_1)
-        toolbar.update()
+        electrode_data = butter_bandpass_filter(raw_data, parameters)
+        KDE_fig, burst_fig = burst_detection(
+            data=electrode_data,
+            electrode=self.electrode_nr,
+            parameters=parameters,
+            plot_electrodes=True,
+            savedata=False,
+        )
+
+        self._apply_dark_theme(KDE_fig)
+        self._apply_dark_theme(burst_fig)
+
+        self._clear_layout(self._burst_plot_layout)
+
+        burst_canvas = FigureCanvasQTAgg(burst_fig)
+        burst_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        burst_wrapper = QWidget()
+        burst_wrapper_layout = QVBoxLayout(burst_wrapper)
+        burst_wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        burst_wrapper_layout.setSpacing(0)
+        burst_wrapper_layout.addWidget(burst_canvas, stretch=1)
+        burst_toolbar = NavigationToolbar2QT(burst_canvas, burst_wrapper)
+        burst_toolbar.setStyleSheet(TOOLBAR_STYLESHEET)
+        burst_wrapper_layout.addWidget(burst_toolbar)
         burst_canvas.draw()
 
-        # Plot the KDE plot
-        KDE_canvas = FigureCanvasTkAgg(KDE_fig, master=self.burstplotsframe)  
-        KDE_canvas.get_tk_widget().grid(row=0, column=1, sticky='nsew')
+        kde_canvas = FigureCanvasQTAgg(KDE_fig)
+        kde_canvas.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        kde_canvas.draw()
 
-        self.burstplotsframe.grid_columnconfigure(0, weight=3)
-        self.burstplotsframe.grid_columnconfigure(1, weight=1)
-        self.burstplotsframe.grid_rowconfigure(0, weight=1)
-        KDE_canvas.draw()
+        self._burst_plot_layout.addWidget(burst_wrapper, stretch=3)
+        self._burst_plot_layout.addWidget(kde_canvas, stretch=1)
 
-    def update_burst_plot(self, parent):
-        # Get the new parameters from the entry widgets
-        temp_parameters=copy.deepcopy(self.parameters)
-        temp_parameters["minimal amount of spikes"]=int(self.minspikes_bw_entry.get())
-        temp_parameters["default interval threshold"]=float(self.def_iv_bw_entry.get())
-        temp_parameters["max interval threshold"]=float(self.max_iv_bw_entry.get())
-        temp_parameters["burst detection kde bandwidth"]=float(self.kde_bw_bw_entry.get())
+    @staticmethod
+    def _apply_dark_theme(fig) -> None:
+        bg = DARK_BG
+        fg = TEXT_PRIMARY
 
-        # Update the output folder path, as this might have changed since the original analysis
-        temp_parameters['output path']=self.folder
+        fig.set_facecolor(bg)
+        for ax in fig.axes:
+            ax.set_facecolor(bg)
+            ax.xaxis.label.set_color(fg)
+            ax.yaxis.label.set_color(fg)
+            for spine in ax.spines.values():
+                spine.set_color(fg)
+            ax.tick_params(colors=fg)
+            ax.title.set_color(fg)
 
-        self.plot_burst_detection(parent, temp_parameters)
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    def default_values_burst(self):
-        # Reset the values to the ones in the JSON file
-        self.minspikes_bw_entry.delete(0,END)
-        self.minspikes_bw_entry.insert(0,self.parameters["minimal amount of spikes"])
-        self.def_iv_bw_entry.delete(0,END)
-        self.def_iv_bw_entry.insert(0,self.parameters["default interval threshold"])
-        self.max_iv_bw_entry.delete(0,END)
-        self.max_iv_bw_entry.insert(0,self.parameters["max interval threshold"])
-        self.kde_bw_bw_entry.delete(0,END)
-        self.kde_bw_bw_entry.insert(0,self.parameters["burst detection kde bandwidth"])
+    def _replace_canvas(self, container: QFrame, layout: QVBoxLayout, fig, toolbar: bool = False) -> None:
+        self._clear_layout(layout)
 
-    def burst_reset(self, parent):
-        self.default_values_burst()
-        self.update_burst_plot(parent)
+        canvas = FigureCanvasQTAgg(fig)
+        canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(canvas, stretch=1)
+
+        if toolbar:
+            nav = NavigationToolbar2QT(canvas, container)
+            nav.setStyleSheet(TOOLBAR_STYLESHEET)
+            palette = nav.palette()
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(TEXT_PRIMARY))
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(TEXT_PRIMARY))
+            nav.setPalette(palette)
+            layout.addWidget(nav)
+
+        canvas.draw()

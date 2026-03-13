@@ -13,7 +13,7 @@ from statsmodels.tsa.stattools import pacf
 
 # Package imports
 from MEAlytics.core._spike_distance import spike_distance
-from MEAlytics.core._isi_distance import isi_distance
+from MEAlytics.core._isi_distance import isi_distance, default_thresh
 
 def silence_runtime_warnings(func):
 

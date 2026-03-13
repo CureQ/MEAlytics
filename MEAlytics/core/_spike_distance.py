@@ -10,7 +10,6 @@ This adapted version is modified for use in MEAlytics.
 """
 import numpy as np
 import pandas as pd
-from MEAlytics.core._isi_distance import *
 
 def get_min_dist(spike_time, spike_train, N_spikes, start_index, t_start, t_end):
     """

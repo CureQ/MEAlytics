@@ -1,349 +1,624 @@
-# Imports
-import os
-from functools import partial
-import json
 import copy
-import webbrowser
-from pathlib import Path
-from tkinter import *
-from tkinter import filedialog
+import json
+import os
 import traceback
+import webbrowser
+from functools import partial
+from pathlib import Path
 
-# External libraries
-import pandas as pd
 import numpy as np
-import customtkinter as ctk
-from CTkToolTip import *
-from CTkMessagebox import CTkMessagebox
-from CTkColorPicker import *
+import pandas as pd
 
-# Package imports
-from MEAlytics.core._plotting import get_defaultcolors, combined_feature_boxplots, features_over_time
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
-class plotting_window(ctk.CTkFrame):
+from MEAlytics.core._plotting import combined_feature_boxplots, features_over_time, get_defaultcolors
+from MEAlytics.GUI._theme import (
+    ACCENT,
+    ACCENT_MUTED,
+    BORDER_COLOR,
+    DARK_BG,
+    STYLESHEET,
+    SURFACE_1,
+    SURFACE_2,
+    SURFACE_3,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    WARNING,
+    _BTN_STYLE_DEFAULT,
+    make_divider,
+    make_label,
+)
+from MEAlytics.GUI._helpers import _well_grid, _adjust_color
+
+
+
+
+_BTN_SIZE = 56
+
+def _colored_btn_style(fg: str) -> str:
+    hover = _adjust_color(fg, 0.7)
+    return f"""
+        QPushButton {{
+            background-color: {fg};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER_COLOR};
+            border-radius: 0px;
+            font-size: 14px;
+            font-weight: 600;
+        }}
+        QPushButton:hover {{
+            background-color: {hover};
+        }}
     """
-    Allows the user to combine multiple MEA experiments to generate plots and discern between healthy and diseased cultures.
-    """
-    def __init__(self, parent):
+
+class PlottingWindow(QMainWindow):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        
-        self.parent=parent
+        self.setWindowTitle("MEAlytics — Plotting")
+        self.resize(1100, 720)
+        self.setMinimumSize(860, 560)
+        self.setStyleSheet(STYLESHEET)
 
-        # Weights
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self._selected_folder: str = ""
+        self._well_buttons: list[QPushButton] = []
+        self._label_buttons: list[QPushButton] = []
+        self._assigned_labels: dict[str, list[int]] = {}
+        self._selected_label: str = ""
+        self._default_colors: list[str] = get_defaultcolors()
+        self._well_amnt: int | None = None
+        self._well_placeholder: QLabel | None = None
 
-        # Plot frames
-        plotting_frame = ctk.CTkFrame(master=self, fg_color='transparent')
-        plotting_frame.grid(row=1, column=0, sticky='nesw')
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
 
-        select_file_frame = ctk.CTkFrame(master=self, fg_color=self.parent.gray_1)
-        select_file_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nesw', columnspan=4)
-        select_file_frame.grid_columnconfigure(0, weight=1)
+        root.addWidget(self._build_top_bar())
 
-        features_over_time_frame = ctk.CTkFrame(master=plotting_frame, fg_color=self.parent.gray_1)
-        features_over_time_frame.grid(row=1, column=0, padx=5, pady=5, sticky='nesw')
-        features_over_time_frame.grid_columnconfigure(0, weight=1)
-        features_over_time_frame.grid_columnconfigure(1, weight=1)
+        main_area = QHBoxLayout()
+        main_area.setSpacing(12)
+        main_area.addWidget(self._build_left_sidebar(), 0)
+        main_area.addWidget(self._build_well_panel(), 1)
+        main_area.addWidget(self._build_right_sidebar(), 0)
+        root.addLayout(main_area, 1)
 
-        boxplot_frame = ctk.CTkFrame(master=plotting_frame, fg_color=self.parent.gray_1)
-        boxplot_frame.grid(row=2, column=0, sticky='nesw', padx=5, pady=5)
-        boxplot_frame.grid_columnconfigure(0, weight=1)
-        boxplot_frame.grid_columnconfigure(1, weight=1)
+        root.addWidget(self._build_bottom_bar())
 
-        # Selected files frame
-        self.selected_files_frame = ctk.CTkScrollableFrame(master=self)
-        self.selected_files_frame.grid(row=1, column=1, padx=5, pady=5, sticky='nesw')
+    def _build_top_bar(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("Card")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(12)
 
-        # Label frames
-        self.assign_labels_frame = ctk.CTkFrame(master=self)
-        self.assign_labels_frame.grid(row=1, column=2, padx=5, pady=5, sticky='new')
+        self._folder_btn = QPushButton("Select Folder")
+        self._folder_btn.setObjectName("PrimaryBtn")
+        self._folder_btn.setMinimumHeight(36)
+        self._folder_btn.setFixedWidth(160)
+        self._folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._folder_btn.clicked.connect(self._load_folder)
+        layout.addWidget(self._folder_btn)
 
-        self.well_buttons_frame = ctk.CTkFrame(self.assign_labels_frame)
-        self.well_buttons_frame.grid(row=0, column=0)
+        self._folder_path_lbl = QLabel("No folder selected")
+        self._folder_path_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent")
+        self._folder_path_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self._folder_path_lbl, 1)
 
-        layout_warning = ctk.CTkButton(master=self.assign_labels_frame, text="Warning: The well/electrode layout is auto-generated and may not match the physical plate exactly. Click here for details.", command=lambda: webbrowser.open_new("https://cureq.github.io/MEAlytics/supported_plates.html"), fg_color=parent.gray_1)
-        layout_warning.grid(row=1 , column=0, pady=10, padx=10, sticky='e')
+        self._file_count_lbl = QLabel("")
+        self._file_count_lbl.setObjectName("StatusBadge")
+        self._file_count_lbl.setVisible(False)
+        layout.addWidget(self._file_count_lbl)
 
-        label_main_frame=ctk.CTkFrame(master=self, fg_color='transparent')
-        label_main_frame.grid(row=1, column=3, sticky='nesw')
+        return bar
 
-        create_labels_frame = ctk.CTkFrame(master=label_main_frame, fg_color=self.parent.gray_1)
-        create_labels_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nesw')
-        create_labels_frame.grid_columnconfigure(0, weight=1)
+    def _build_left_sidebar(self) -> QWidget:
+        col = QWidget()
+        col.setFixedWidth(220)
+        layout = QVBoxLayout(col)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
-        label_settings_frame=ctk.CTkFrame(label_main_frame, fg_color=self.parent.gray_1)
-        label_settings_frame.grid(row=1, column=0, padx=5, pady=5, sticky='nesw')
-        label_settings_frame.grid_columnconfigure(0, weight=1)
+        fot_card = QFrame()
+        fot_card.setObjectName("Card")
+        fot = QVBoxLayout(fot_card)
+        fot.setContentsMargins(16, 14, 16, 14)
+        fot.setSpacing(8)
 
-        self.labels_frame = ctk.CTkFrame(master=label_main_frame, fg_color=self.parent.gray_1)
-        self.labels_frame.grid(row=2, column=0, padx=5, pady=5, sticky='nesw')
-        self.labels_frame.grid_columnconfigure(0, weight=1)
+        fot.addWidget(make_label("Features Over Time", "SectionLabel"))
+        fot.addWidget(make_divider())
 
-        label_main_frame.grid_rowconfigure(0, weight=0)
-        label_main_frame.grid_rowconfigure(1, weight=0)
-        label_main_frame.grid_rowconfigure(2, weight=0)
+        fot.addWidget(QLabel("DIV Prefix:"))
+        self._prefix_entry = QLineEdit()
+        self._prefix_entry.setPlaceholderText("e.g.  DIV")
+        fot.addWidget(self._prefix_entry)
 
-        # Values
-        self.selected_folder = ''
-        self.well_buttons=[]
-        self.label_buttons=[]
-        self.assigned_labels={}
-        self.selected_label=[]
-        self.default_colors=get_defaultcolors()
-        self.well_amnt=None
+        self._fot_datapoints_cb = QCheckBox("Show datapoints")
+        self._fot_datapoints_cb.setStyleSheet("background: transparent")
+        fot.addWidget(self._fot_datapoints_cb)
 
-        self.select_folder_button=ctk.CTkButton(master=select_file_frame, text='Select a folder', command=self.create_well_buttons)
-        self.select_folder_button.grid(row=0, column=0, columnspan=2, pady=10, padx=10, sticky='nesw')
+        fot_btn = QPushButton("Plot Features over Time")
+        fot_btn.setObjectName("PrimaryBtn")
+        fot_btn.setMinimumHeight(36)
+        fot_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        fot_btn.clicked.connect(self._create_plots)
+        fot.addWidget(fot_btn)
 
-        # Features over time
-        fot_label=ctk.CTkLabel(master=features_over_time_frame, text="Features over time", font=ctk.CTkFont(size=15))
-        fot_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='w')
+        layout.addWidget(fot_card)
 
-        prefix_label=ctk.CTkLabel(master=features_over_time_frame, text="DIV Prefix:")
-        prefix_label.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+        bp_card = QFrame()
+        bp_card.setObjectName("Card")
+        bp = QVBoxLayout(bp_card)
+        bp.setContentsMargins(16, 14, 16, 14)
+        bp.setSpacing(8)
 
-        self.prefix_entry=ctk.CTkEntry(master=features_over_time_frame)
-        self.prefix_entry.grid(row=1, column=1, padx=10, pady=10, sticky='nesw')
+        bp.addWidget(make_label("Boxplots", "SectionLabel"))
+        bp.addWidget(make_divider())
 
-        show_datapoints_label=ctk.CTkLabel(master=features_over_time_frame, text='Show datapoints:')
-        show_datapoints_label.grid(row=2, column=0, padx=10, pady=10, sticky='w')
+        self._bp_datapoints_cb = QCheckBox("Show datapoints")
+        self._bp_datapoints_cb.setStyleSheet("background: transparent")
+        bp.addWidget(self._bp_datapoints_cb)
 
-        self.show_datapoints_entry=ctk.CTkCheckBox(master=features_over_time_frame, text='')
-        self.show_datapoints_entry.grid(row=2, column=1, padx=10, pady=10, sticky='nesw')
+        self._discern_wells_cb = QCheckBox("Color wells")
+        self._discern_wells_cb.setStyleSheet("background: transparent")
+        bp.addWidget(self._discern_wells_cb)
 
-        create_plot_button=ctk.CTkButton(text="Plot Features over time", master=features_over_time_frame, command=self.create_plots)
-        create_plot_button.grid(row=3, column=0, pady=10, padx=10, sticky='nesw', columnspan=2)
+        bp_btn = QPushButton("Create Boxplots")
+        bp_btn.setObjectName("PrimaryBtn")
+        bp_btn.setMinimumHeight(36)
+        bp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bp_btn.clicked.connect(self._create_boxplots)
+        bp.addWidget(bp_btn)
 
-        # Combine measurements
-        bp_label=ctk.CTkLabel(master=boxplot_frame, text="Boxplots", font=ctk.CTkFont(size=15))
-        bp_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='w')
+        layout.addWidget(bp_card)
+        layout.addStretch()
 
-        bp_show_datapoints_label=ctk.CTkLabel(master=boxplot_frame, text='Show datapoints:')
-        bp_show_datapoints_label.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+        return col
 
-        self.bp_show_datapoints_entry=ctk.CTkCheckBox(master=boxplot_frame, text='')
-        self.bp_show_datapoints_entry.grid(row=1, column=1, padx=10, pady=10, sticky='nesw')
+    def _build_well_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("Card")
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(16, 14, 16, 14)
+        outer.setSpacing(10)
 
-        discern_wells_label=ctk.CTkLabel(master=boxplot_frame, text='Color wells:')
-        discern_wells_label.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-
-        self.discern_wells_entry=ctk.CTkCheckBox(master=boxplot_frame, text='')
-        self.discern_wells_entry.grid(row=2, column=1, padx=10, pady=10, sticky='nesw')
-
-        create_plot_button=ctk.CTkButton(text="Create Boxplots", master=boxplot_frame, command=self.create_boxplots)
-        create_plot_button.grid(row=3, column=0, pady=10, padx=10, sticky='nesw', columnspan=2)
-
-        return_to_main = ctk.CTkButton(master=plotting_frame, text="Return to main menu", command=lambda: self.parent.show_frame(self.parent.home_frame), fg_color=parent.gray_1)
-        return_to_main.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky='nesw')
-
-        # Create labels
-        self.new_label_entry=ctk.CTkEntry(master=create_labels_frame, placeholder_text="Create a label; e.g.: \'control\'")
-        self.new_label_entry.grid(row=0, column=0, pady=10, padx=10, sticky='nesw')
-
-        new_label_button=ctk.CTkButton(master=create_labels_frame, text='Add Label', command=self.new_label)
-        new_label_button.grid(row=1, column=0, padx=10, pady=5, sticky='nesw')
-
-        save_label_button=ctk.CTkButton(master=label_settings_frame, text="Save Labels", command=self.save_labels)
-        save_label_button.grid(row=2, column=0, padx=10, pady=(10,5), sticky='nesw')
-
-        save_label_button=ctk.CTkButton(master=label_settings_frame, text="Import Labels", command=self.import_labels)
-        save_label_button.grid(row=3, column=0, padx=10, pady=5, sticky='nesw')
-
-        save_label_button=ctk.CTkButton(master=label_settings_frame, text="Reset Labels", command=self.reset_labels)
-        save_label_button.grid(row=4, column=0, padx=10, pady=(5,10), sticky='nesw')
-
-    def save_labels(self):
-        file_path = filedialog.asksaveasfilename(
-        defaultextension=".json",
-        filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-        title="Save JSON File"
+        header = QHBoxLayout()
+        header.addWidget(make_label("Assign Wells", "SectionLabel"))
+        header.addStretch()
+        warn_btn = QPushButton("Layout is auto-generated. Click for details.")
+        warn_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        warn_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {WARNING};
+                border: none;
+                font-size: 11px;
+                text-align: left;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                color: {TEXT_PRIMARY};
+                text-decoration: underline;
+            }}
+        """)
+        warn_btn.clicked.connect(
+            lambda: webbrowser.open("https://cureq.github.io/MEAlytics/supported_plates")
         )
+        header.addWidget(warn_btn)
+        outer.addLayout(header)
+        outer.addWidget(make_divider())
 
-        if not file_path:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._well_grid_widget = QWidget()
+        self._well_grid_layout = QGridLayout(self._well_grid_widget)
+        self._well_grid_layout.setSpacing(0)
+        self._well_grid_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._well_placeholder = QLabel("Load a folder to assign wells to labels.")
+        self._well_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._well_placeholder.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px; background: transparent")
+        self._well_grid_layout.addWidget(self._well_placeholder, 0, 0)
+        self._well_grid_widget.setFixedSize(300, 60)
+
+        scroll.setWidget(self._well_grid_widget)
+        outer.addWidget(scroll, 1)
+
+        return panel
+
+    def _build_right_sidebar(self) -> QWidget:
+        col = QWidget()
+        col.setFixedWidth(200)
+        layout = QVBoxLayout(col)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        create_card = QFrame()
+        create_card.setObjectName("Card")
+        cc = QVBoxLayout(create_card)
+        cc.setContentsMargins(16, 14, 16, 14)
+        cc.setSpacing(8)
+
+        cc.addWidget(make_label("Create Label", "SectionLabel"))
+
+        self._new_label_entry = QLineEdit()
+        self._new_label_entry.setPlaceholderText("e.g. control")
+        self._new_label_entry.returnPressed.connect(self._new_label)
+        cc.addWidget(self._new_label_entry)
+
+        add_btn = QPushButton("Add Label")
+        add_btn.setObjectName("PrimaryBtn")
+        add_btn.setMinimumHeight(34)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.clicked.connect(self._new_label)
+        cc.addWidget(add_btn)
+
+        layout.addWidget(create_card)
+
+        actions_card = QFrame()
+        actions_card.setObjectName("Card")
+        ac = QVBoxLayout(actions_card)
+        ac.setContentsMargins(16, 14, 16, 14)
+        ac.setSpacing(6)
+
+        ac.addWidget(make_label("Actions", "SectionLabel"))
+
+        for text, slot in [
+            ("Save Labels",   self._save_labels),
+            ("Import Labels", self._import_labels),
+            ("Reset Labels",  self._reset_labels),
+        ]:
+            btn = QPushButton(text)
+            btn.setObjectName("SecondaryBtn")
+            btn.setMinimumHeight(34)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(slot)
+            ac.addWidget(btn)
+
+        layout.addWidget(actions_card)
+
+        labels_card = QFrame()
+        labels_card.setObjectName("Card")
+        lc = QVBoxLayout(labels_card)
+        lc.setContentsMargins(16, 14, 16, 14)
+        lc.setSpacing(8)
+
+        lc.addWidget(make_label("Labels", "SectionLabel"))
+        lc.addWidget(make_divider())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        self._labels_container = QWidget()
+        self._labels_layout = QVBoxLayout(self._labels_container)
+        self._labels_layout.setContentsMargins(0, 0, 0, 0)
+        self._labels_layout.setSpacing(6)
+        self._labels_layout.addStretch()
+
+        scroll.setWidget(self._labels_container)
+        lc.addWidget(scroll, 1)
+
+        layout.addWidget(labels_card, 1)
+
+        return col
+
+    def _build_bottom_bar(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("Card")
+        bar.setFixedHeight(90)
+        layout = QVBoxLayout(bar)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(6)
+
+        layout.addWidget(make_label("Loaded Experiments", "SectionLabel"))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        self._file_list_container = QWidget()
+        self._file_list_layout = QHBoxLayout(self._file_list_container)
+        self._file_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._file_list_layout.setSpacing(8)
+        self._file_list_layout.addStretch()
+
+        scroll.setWidget(self._file_list_container)
+        layout.addWidget(scroll, 1)
+
+        return bar
+
+    def _load_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Experiments Folder")
+        if not folder:
             return
-        
-        with open(file_path, "w") as json_file:
-            json.dump(self.assigned_labels, json_file, indent=4)
 
-        CTkMessagebox(message=f"Labels succesfully saved at {file_path}", icon="check", option_1="Ok", title="Saved Labels")
-
-    def import_labels(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],  # File type filters
-            title="Open JSON File")
-
-        if not file_path:
-            return
-
-        with open(file_path, "r") as json_file:
-            imported_labels = json.load(json_file)
-        self.set_labels(imported_labels)
-
-    def set_labels(self, labels):
-        # Reset labels
-        for label_button in self.label_buttons:
-            label_button.destroy()
-        self.label_buttons=[]
-
-        for label in labels.keys():
-            self.create_label_button(label)
-        self.assigned_labels=labels
-
-        self.update_button_colours()
-
-    def reset_labels(self):
-        self.set_labels({})
-
-    def create_plots(self):
-        # Perform checks
-        valid_groups=False
-        for label in self.assigned_labels.keys():
-            if len(self.assigned_labels[label]) > 0:
-                valid_groups=True
-        if not valid_groups:
-            CTkMessagebox(title="Error",
-                              message='Please create at least one label, and assign at least one well to it.',
-                              icon="cancel",
-                              wraplength=400)
-            return
-        if str(self.prefix_entry.get()) == '':
-            CTkMessagebox(title="Error",
-                              message='Please define the prefix that is used to indicate the age of the neurons, e.g. DIV, t, day',
-                              icon="cancel",
-                              wraplength=400)
-            return
-
-        # Call library
-        try:
-            file_path = filedialog.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
-            title="Save PDF File"
-            )
-
-            if not file_path:
-                return
-
-            pdf_path=features_over_time(folder=self.selected_folder, labels=copy.deepcopy(self.assigned_labels), div_prefix=str(self.prefix_entry.get()), output_fileadress=file_path, colors=self.default_colors, show_datapoints=bool(self.show_datapoints_entry.get()))
-            CTkMessagebox(message=f"Figures succesfully saved at {file_path}", icon="check", option_1="Ok", title="Saved Figures")
-            webbrowser.open(f"file://{pdf_path}")
-        except Exception as error:
-            CTkMessagebox(title="Error",
-                              message='Something went wrong while creating the plots',
-                              icon="cancel",
-                              wraplength=400)
-            
-            traceback.print_exc()
-
-    def create_boxplots(self):
-        # check if there are groups that contain wells
-        valid_groups=False
-        for label in self.assigned_labels.keys():
-            if len(self.assigned_labels[label]) > 0:
-                valid_groups=True
-        if not valid_groups:
-            CTkMessagebox(title="Error",
-                              message='Please create at least one label, and assign at least one well to it.',
-                              icon="cancel",
-                              wraplength=400)
-            return
-        
-        try:
-            file_path = filedialog.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
-            title="Save PDF File"
-            )
-
-            if not file_path:
-                return
-            
-            pdf_path=combined_feature_boxplots(folder=self.selected_folder, labels=copy.deepcopy(self.assigned_labels), output_fileadress=file_path, colors=self.default_colors, show_datapoints=bool(self.bp_show_datapoints_entry.get()), discern_wells=bool(self.discern_wells_entry.get()), well_amnt=self.well_amnt)
-            webbrowser.open(f"file://{pdf_path}")
-            CTkMessagebox(message=f"Figures succesfully saved at {file_path}", icon="check", option_1="Ok", title="Saved Figures")
-        except Exception as error:
-            CTkMessagebox(title="Error",
-                              message='Something went wrong while creating the boxplots',
-                              icon="cancel",
-                              wraplength=400)
-            traceback.print_exc()
-
-    def set_selected_label(self, label):
-        self.selected_label=label
-
-    def create_label_button(self, label):
-        label_button=ctk.CTkButton(master=self.labels_frame, text=label, command=partial(self.set_selected_label, label), fg_color=self.default_colors[len(self.label_buttons)], hover_color=self.parent.adjust_color(self.default_colors[len(self.label_buttons)], 0.6))
-        label_button.grid(row=len(self.label_buttons), column=0, pady=5, padx=10, sticky='nesw')
-        self.label_buttons.append(label_button)
-        self.assigned_labels[label]=[]
-        self.new_label_entry.delete(0, END)
-
-    def new_label(self):
-        label = self.new_label_entry.get()
-        if (label == '') or (label in self.assigned_labels.keys()):
-            return
-        self.create_label_button(label)
-
-    def update_button_colours(self):
-        for well_button in self.well_buttons:
-            well_button.configure(fg_color=self.parent.theme["CTkButton"]["fg_color"][1], hover_color=self.parent.theme["CTkButton"]["hover_color"][1])
-        for index, key in enumerate(self.assigned_labels.keys()):
-            for well in self.assigned_labels[key]:
-                self.well_buttons[well-1].configure(fg_color=self.default_colors[index], hover_color=self.parent.adjust_color(self.default_colors[index], 0.6))
-
-    def well_button_func(self, button):
-        # If the label was already selected, remove the selection
-        if button in self.assigned_labels[self.selected_label]:
-            self.assigned_labels[self.selected_label].remove(button)
-        else:
-            # First remove well from all labels
-            for key in self.assigned_labels.keys():
-                if button in self.assigned_labels[key]:
-                    self.assigned_labels[key].remove(button)
-            self.assigned_labels[self.selected_label].append(button)
-        self.update_button_colours()
-
-    def create_well_buttons(self):
-        folder=filedialog.askdirectory()
-        if folder == '':
-            return
-        well_amnts=[]
-        file_names=[]
-        for root, dirs, files in os.walk(folder):
+        well_amnts: list[int] = []
+        file_names: list[str] = []
+        for root, _, files in os.walk(folder):
             for file in files:
-                if file.endswith("Features.csv") and not "Electrode" in file:
-                    data=pd.read_csv(os.path.join(root, file))
+                if file.endswith("Features.csv") and "Electrode" not in file:
+                    data = pd.read_csv(os.path.join(root, file))
                     well_amnts.append(len(data))
                     file_names.append(Path(os.path.join(root, file)).stem)
+
         if len(well_amnts) < 1:
-            CTkMessagebox(title="Error",
-                              message='Not enough features-files found. Minimum amount is 1',
-                              icon="cancel",
-                              wraplength=400)
+            QMessageBox.critical(
+                self, "Error",
+                "No features files found in this folder. Minimum required: 1."
+            )
             return
-        if not(np.min(well_amnts) == np.max(well_amnts)):
-            CTkMessagebox(title="Error",
-                              message='Not all experiments have the same amount of wells, please remove the exceptions from the folder.',
-                              icon="cancel",
-                              wraplength=400)
+
+        if np.min(well_amnts) != np.max(well_amnts):
+            QMessageBox.critical(
+                self, "Error",
+                "Not all experiments have the same number of wells.\n"
+                "Please remove the exceptions from the folder."
+            )
             return
-        
-        self.well_amnt=int(np.mean(well_amnts))
-        self.selected_folder=folder
-        self.select_folder_button.configure(text=self.selected_folder)
-        width, height = self.parent.calculate_well_grid(np.mean(well_amnts))
-        counter=1
 
-        for h in range(height):
-            for w in range(width):
-                well_button=ctk.CTkButton(master=self.well_buttons_frame, text=counter, command=partial(self.well_button_func, counter), height=100, width=100, font=ctk.CTkFont(size=25))
-                well_button.grid(row=h, column=w, sticky='nesw')
-                self.well_buttons.append(well_button)
-                counter+=1
+        new_well_amnt = int(np.mean(well_amnts))
 
-        for i, file in enumerate(file_names):
-            file_label=ctk.CTkLabel(master=self.selected_files_frame, text=file)
-            file_label.grid(row=i, column=0, sticky='w', padx=10, pady=2)
+        # If a folder was already loaded, warn when well count changes
+        if self._well_amnt is not None and new_well_amnt != self._well_amnt:
+            reply = QMessageBox.warning(
+                self,
+                "Well Count Mismatch",
+                f"The new folder has {new_well_amnt} wells, but the current "
+                f"session has {self._well_amnt}.\n\n"
+                "Loading this folder will clear all current label assignments.\n"
+                "Do you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self._reset_labels()
 
-        self.select_folder_button.configure(state='disabled')    
+        self._well_amnt = new_well_amnt
+        self._selected_folder = folder
+
+        self._folder_path_lbl.setText(Path(folder).name)
+        self._folder_path_lbl.setToolTip(folder)
+        self._folder_path_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        n = len(file_names)
+        self._file_count_lbl.setText(f"{n} experiment{'s' if n != 1 else ''}")
+        self._file_count_lbl.setVisible(True)
+
+        self._build_well_buttons(new_well_amnt)
+        self._populate_file_list(file_names)
+
+    def _build_well_buttons(self, n_wells: int):
+        if self._well_placeholder is not None:
+            self._well_placeholder.deleteLater()
+            self._well_placeholder = None
+
+        for btn in self._well_buttons:
+            btn.deleteLater()
+        self._well_buttons.clear()
+
+        cols, rows = _well_grid(n_wells)
+        i = 1
+        for r in range(rows):
+            for c in range(cols):
+                btn = QPushButton(str(i))
+                btn.setFixedSize(_BTN_SIZE, _BTN_SIZE)
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setStyleSheet(_BTN_STYLE_DEFAULT)
+                btn.clicked.connect(partial(self._well_button_func, i))
+                self._well_grid_layout.addWidget(btn, r, c)
+                self._well_buttons.append(btn)
+                i += 1
+
+        self._well_grid_widget.setFixedSize(cols * _BTN_SIZE, rows * _BTN_SIZE)
+
+    def _populate_file_list(self, file_names: list[str]):
+        while self._file_list_layout.count() > 1:
+            item = self._file_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for name in file_names:
+            pill = QLabel(name)
+            pill.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 11px; "
+                f"background: {SURFACE_2}; border: 1px solid {BORDER_COLOR}; "
+                f"border-radius: 6px; padding: 2px 8px;"
+            )
+            self._file_list_layout.insertWidget(self._file_list_layout.count() - 1, pill)
+
+    def _well_button_func(self, well: int):
+        if not self._selected_label:
+            QMessageBox.warning(
+                self, "No Label Selected",
+                "Please select a label before assigning wells."
+            )
+            return
+
+        if well in self._assigned_labels.get(self._selected_label, []):
+            self._assigned_labels[self._selected_label].remove(well)
+        else:
+            for key in self._assigned_labels:
+                if well in self._assigned_labels[key]:
+                    self._assigned_labels[key].remove(well)
+            self._assigned_labels[self._selected_label].append(well)
+
+        self._update_well_colors()
+
+    def _update_well_colors(self):
+        for btn in self._well_buttons:
+            btn.setStyleSheet(_BTN_STYLE_DEFAULT)
+        for idx, (label, wells) in enumerate(self._assigned_labels.items()):
+            color = self._default_colors[idx % len(self._default_colors)]
+            for well in wells:
+                self._well_buttons[well - 1].setStyleSheet(_colored_btn_style(color))
+
+    def _new_label(self):
+        label = self._new_label_entry.text().strip()
+        if not label or label in self._assigned_labels:
+            return
+        self._create_label_button(label)
+        self._new_label_entry.clear()
+
+    def _create_label_button(self, label: str):
+        idx = len(self._label_buttons)
+        color = self._default_colors[idx % len(self._default_colors)]
+        hover = _adjust_color(color, 0.7)
+
+        btn = QPushButton(label)
+        btn.setMinimumHeight(34)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                color: {TEXT_PRIMARY};
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{ background-color: {hover}; }}
+        """)
+        btn.clicked.connect(partial(self._set_selected_label, label))
+        self._labels_layout.insertWidget(self._labels_layout.count() - 1, btn)
+        self._label_buttons.append(btn)
+        self._assigned_labels[label] = []
+
+    def _set_selected_label(self, label: str):
+        self._selected_label = label
+        for idx, btn in enumerate(self._label_buttons):
+            lbl_name = list(self._assigned_labels.keys())[idx]
+            color = self._default_colors[idx % len(self._default_colors)]
+            hover = _adjust_color(color, 0.7)
+            border = f"2px solid {TEXT_PRIMARY}" if lbl_name == label else "none"
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: {TEXT_PRIMARY};
+                    border: {border};
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    padding: 6px 12px;
+                }}
+                QPushButton:hover {{ background-color: {hover}; }}
+            """)
+
+    def _set_labels(self, labels: dict[str, list[int]]):
+        for btn in self._label_buttons:
+            btn.deleteLater()
+        self._label_buttons.clear()
+        self._assigned_labels = {}
+        for label in labels:
+            self._create_label_button(label)
+        self._assigned_labels = labels
+        self._update_well_colors()
+
+    def _reset_labels(self):
+        self._set_labels({})
+        self._selected_label = ""
+
+    def _save_labels(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Labels", "", "JSON Files (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+        with open(path, "w") as f:
+            json.dump(self._assigned_labels, f, indent=4)
+        QMessageBox.information(self, "Saved", f"Labels saved to:\n{path}")
+
+    def _import_labels(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Labels", "", "JSON Files (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+        with open(path) as f:
+            labels = json.load(f)
+        self._set_labels(labels)
+
+    def _validate_groups(self) -> bool:
+        return any(len(wells) > 0 for wells in self._assigned_labels.values())
+
+    def _create_plots(self):
+        if not self._validate_groups():
+            QMessageBox.warning(
+                self, "No Groups",
+                "Please create at least one label and assign at least one well to it."
+            )
+            return
+        prefix = self._prefix_entry.text().strip()
+        if not prefix:
+            QMessageBox.warning(
+                self, "No Prefix",
+                "Please define the prefix used to indicate neuron age (e.g. DIV, t, day)."
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save PDF", "", "PDF Files (*.pdf);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            pdf_path = features_over_time(
+                folder=self._selected_folder,
+                labels=copy.deepcopy(self._assigned_labels),
+                div_prefix=prefix,
+                output_fileadress=path,
+                colors=self._default_colors,
+                show_datapoints=self._fot_datapoints_cb.isChecked(),
+            )
+            QMessageBox.information(self, "Saved", f"Figures saved to:\n{path}")
+            webbrowser.open(f"file://{pdf_path}")
+        except Exception:
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", "Something went wrong while creating the plots.")
+
+    def _create_boxplots(self):
+        if not self._validate_groups():
+            QMessageBox.warning(
+                self, "No Groups",
+                "Please create at least one label and assign at least one well to it."
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save PDF", "", "PDF Files (*.pdf);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            pdf_path = combined_feature_boxplots(
+                folder=self._selected_folder,
+                labels=copy.deepcopy(self._assigned_labels),
+                output_fileadress=path,
+                colors=self._default_colors,
+                show_datapoints=self._bp_datapoints_cb.isChecked(),
+                discern_wells=self._discern_wells_cb.isChecked(),
+                well_amnt=self._well_amnt,
+            )
+            webbrowser.open(f"file://{pdf_path}")
+            QMessageBox.information(self, "Saved", f"Figures saved to:\n{path}")
+        except Exception:
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", "Something went wrong while creating the boxplots.")

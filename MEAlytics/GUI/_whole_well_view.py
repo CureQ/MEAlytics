@@ -1,209 +1,260 @@
-# Imports
 import os
 import json
 import copy
-from tkinter import *
-from tkinter import ttk
 
-# External libraries
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  NavigationToolbar2Tk)
-import customtkinter as ctk
-from CTkToolTip import *
-from CTkColorPicker import *
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 
-# Package imports
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QLineEdit, QComboBox,
+    QFrame, QTabWidget, QWidget, QSizePolicy, QGroupBox
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPalette, QColor
+
+from MEAlytics.GUI._theme import (
+    SURFACE_1, SURFACE_2, SURFACE_3, BORDER_COLOR,
+    ACCENT, ACCENT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    DARK_BG, TOOLBAR_STYLESHEET,
+    make_divider, make_primary_btn, make_secondary_btn,
+)
+from MEAlytics.GUI._helpers import _set_entry, _get_float
+
 from MEAlytics.core._network_burst_detection import network_burst_detection
 from MEAlytics.core._plotting import well_electrodes_kde
 
-class whole_well_view(ctk.CTkToplevel):
-    """
-    Allows the user to inspect the network burst detection of a single well.
-    """
-    def __init__(self, parent, folder, well):
-        super().__init__(parent)
-        self.title(f"Well: {well}")
+class WholeWellView(QDialog):
+    _DEFAULT_BW = 0.1
+    _TH_METHODS = ['Yen', 'Otsu', 'Li', 'Isodata', 'Mean', 'Minimum', 'Triangle']
 
-        self.tab_frame=ctk.CTkTabview(self, anchor='nw')
-        self.tab_frame.pack(fill='both', expand=True, pady=10, padx=10)
+    def __init__(self, folder: str, well: int):
+        super().__init__()
+        self.setWindowTitle(f"Well: {well}")
+        self.resize(1280, 860)
+        self.setMinimumSize(900, 600)
 
-        self.grid_rowconfigure(0, weight=1)
-
-        self.tab_frame.add("Network Burst Detection")
-        self.tab_frame.tab("Network Burst Detection").grid_columnconfigure(0, weight=1)
-        self.tab_frame.tab("Network Burst Detection").grid_rowconfigure(0, weight=1)
-
-        self.tab_frame.add("Well Activity")
-        self.tab_frame.tab("Well Activity").grid_columnconfigure(0, weight=1)
-        self.tab_frame.tab("Well Activity").grid_rowconfigure(0, weight=1)
-
-        # Set the icon with a little delay, otherwise it does not work
-        try:
-            self.after(250, lambda: self.iconbitmap(os.path.join(parent.icon_path)))
-        except Exception as error:
-            print(error)
-
-        self.parameters=open(f"{folder}/parameters.json")
-        self.parameters=json.load(self.parameters)
+        with open(os.path.join(folder, "parameters.json")) as fh:
+            self.parameters = json.load(fh)
         self.parameters["output hdf file"] = os.path.join(folder, "output_values.h5")
+        self.folder = folder
+        self.well = well
 
-        self.folder=folder
-        self.well=well
-        self.parent=parent
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(0)
 
-        """Network burst detection plot"""
-        # Create a frame for the plots
-        self.nbd_plot_frame=ctk.CTkFrame(master=self.tab_frame.tab("Network Burst Detection"))
-        self.nbd_plot_frame.grid(row=0, column=0, sticky='nesw')
-        self.nbd_plot_frame.grid_columnconfigure(0, weight=1)
-        self.nbd_plot_frame.grid_rowconfigure(0, weight=1)
+        self.tabs = QTabWidget()
+        root_layout.addWidget(self.tabs)
 
-        # Create a frame for the settings
-        nbd_settings_frame=ctk.CTkFrame(master=self.tab_frame.tab("Network Burst Detection"), fg_color=parent.gray_6)
-        nbd_settings_frame.grid(row=1, column=0)
+        self._build_nbd_tab()
+        self._build_activity_tab()
 
-        # Network burst detection settings
-        # NB settings
-        burst_options_label=ctk.CTkLabel(master=nbd_settings_frame, text='Network Burst Detection Parameters', font=ctk.CTkFont(size=25)).grid(row=0, column=0, pady=10, padx=10, sticky='w', columnspan=2)
-        min_channels_nb_label=ctk.CTkLabel(master=nbd_settings_frame, text="Min channels (%)").grid(row=1, column=0, sticky='w', padx=10, pady=10)
-        self.min_channels_nb_entry=ctk.CTkEntry(master=nbd_settings_frame)
-        self.min_channels_nb_entry.grid(row=1, column=1, sticky='w', padx=10, pady=10)
-        
-        self.th_method_nb_var = ctk.StringVar(value=nbd_settings_frame)
-        self.nwthoptions_nb = ['Yen', 'Otsu', 'Li', 'Isodata', 'Mean', 'Minimum', 'Triangle']
-        th_method_nb = ctk.CTkLabel(master=nbd_settings_frame, text="Thresholding method:")
-        th_method_nb.grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        self.th_method_dropdown_nb = ctk.CTkOptionMenu(nbd_settings_frame, variable=self.th_method_nb_var, values=self.nwthoptions_nb)
-        self.th_method_dropdown_nb.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+        self._reset_nbd()
+        self._reset_activity()
 
-        nbd_kde_bandwidth_nb_label=ctk.CTkLabel(master=nbd_settings_frame, text="KDE Bandwidth:").grid(row=3, column=0, sticky='w', padx=10, pady=10)
-        self.nbd_kde_bandwidth_nb_entry=ctk.CTkEntry(master=nbd_settings_frame)
-        self.nbd_kde_bandwidth_nb_entry.grid(row=3, column=1, sticky='w', padx=10, pady=10)
+    def _build_nbd_tab(self) -> None:
+        nbd_tab = QWidget()
+        tab_layout = QVBoxLayout(nbd_tab)
+        tab_layout.setContentsMargins(16, 16, 16, 16)
+        tab_layout.setSpacing(12)
 
-        # Buttons
-        nb_update_plot_button=ctk.CTkButton(master=nbd_settings_frame, text="Update plot", command=self.update_plot)
-        nb_update_plot_button.grid(row=4, column=0, sticky='nesw', padx=10, pady=10)
-        nb_plot_disclaimer = CTkToolTip(nb_update_plot_button, y_offset=-100, wraplength=400, message='These settings are for visualisation purposes only, they will not affect the current analysis outcomes, or further steps such as feature calculation. These options are solely here to show how they could alter the analysis.')
+        self._nbd_plot_container = QFrame()
+        self._nbd_plot_container.setObjectName("Card")
+        self._nbd_plot_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._nbd_plot_layout = QVBoxLayout(self._nbd_plot_container)
+        self._nbd_plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._nbd_plot_layout.setSpacing(0)
+        tab_layout.addWidget(self._nbd_plot_container, stretch=1)
 
-        nb_reset_button=ctk.CTkButton(master=nbd_settings_frame, text="Reset", command=self.reset)
-        nb_reset_button.grid(row=4, column=1, sticky='nesw', padx=10, pady=10)
+        tab_layout.addWidget(make_divider())
 
-        # Create initial plot
-        self.reset()
+        nbd_group = QGroupBox("Network Burst Detection Parameters")
+        nbd_layout = QGridLayout()
+        nbd_layout.setSpacing(8)
+        nbd_layout.setContentsMargins(16, 18, 16, 12)
+        nbd_group.setLayout(nbd_layout)
 
-        '''Electrode activity'''
-        self.electrode_activity_plot_frame=ctk.CTkFrame(master=self.tab_frame.tab("Well Activity"))
-        self.electrode_activity_plot_frame.grid(row=0, column=0, sticky='nsew')
-        self.electrode_activity_plot_frame.grid_columnconfigure(0, weight=1)
-        self.electrode_activity_plot_frame.grid_rowconfigure(0, weight=1)
-        electrode_activity_settings=ctk.CTkFrame(master=self.tab_frame.tab("Well Activity"), fg_color=parent.gray_6)
-        electrode_activity_settings.grid(row=1, column=0)
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+            return l
 
-        self.def_bw_value=0.1
+        nbd_layout.addWidget(_lbl("Min channels (%):"), 0, 0)
+        self._min_channels_entry = QLineEdit()
+        nbd_layout.addWidget(self._min_channels_entry, 0, 1)
 
-        el_act_bw_label=ctk.CTkLabel(master=electrode_activity_settings, text="KDE bandwidth")
-        el_act_bw_label.grid(row=0, column=0, sticky='w', padx=10, pady=10)
-        self.el_act_bw_entry=ctk.CTkEntry(master=electrode_activity_settings)
-        self.el_act_bw_entry.grid(row=0, column=1, sticky='nesw', pady=10, padx=10)
-        self.el_act_bw_entry.insert(0, self.def_bw_value)
+        nbd_layout.addWidget(_lbl("Thresholding method:"), 1, 0)
+        self._th_method_combo = QComboBox()
+        self._th_method_combo.addItems(self._TH_METHODS)
+        nbd_layout.addWidget(self._th_method_combo, 1, 1)
 
-        # Buttons
-        el_act_update_plot=ctk.CTkButton(master=electrode_activity_settings, text='Update plot', command=self.well_activity_update_plot)
-        el_act_update_plot.grid(row=1, column=0, sticky='nesw', padx=10, pady=10)
+        nbd_layout.addWidget(_lbl("KDE bandwidth:"), 2, 0)
+        self._nbd_kde_bw_entry = QLineEdit()
+        nbd_layout.addWidget(self._nbd_kde_bw_entry, 2, 1)
 
-        el_act_reset=ctk.CTkButton(master=electrode_activity_settings, text='Reset', command=self.reset_electrode_activity)
-        el_act_reset.grid(row=1, column=1, sticky='nesw', padx=10, pady=10)
+        tab_layout.addWidget(nbd_group)
 
-        # Create initial plot
-        self.reset_electrode_activity()
+        action_bar = QFrame()
+        action_bar.setObjectName("Card")
+        bar_layout = QHBoxLayout(action_bar)
+        bar_layout.setContentsMargins(16, 10, 16, 10)
+        bar_layout.setSpacing(10)
 
-    def plot_network_bursts(self, parameters):
-        fig=network_burst_detection(wells=[self.well], parameters=parameters, plot_electrodes=True, savedata=False, save_figures=False)
-        
-        # Check which colorscheme we have to use
-        axiscolour=self.parent.text_color
-        bgcolor=self.parent.gray_4
+        update_btn = make_primary_btn("▶  Update Plot")
+        update_btn.setToolTip(
+            "These settings are for visualisation purposes only, they will not affect "
+            "the current analysis outcomes or further steps such as feature calculation."
+        )
+        update_btn.clicked.connect(self._update_nbd_plot)
+        bar_layout.addWidget(update_btn)
 
-        fig.set_facecolor(bgcolor)
+        reset_btn = make_secondary_btn("↺  Reset")
+        reset_btn.clicked.connect(self._reset_nbd)
+        bar_layout.addWidget(reset_btn)
+        bar_layout.addStretch()
+
+        tab_layout.addWidget(action_bar)
+        self.tabs.addTab(nbd_tab, "Network Burst Detection")
+
+    def _build_activity_tab(self) -> None:
+        activity_tab = QWidget()
+        tab_layout = QVBoxLayout(activity_tab)
+        tab_layout.setContentsMargins(16, 16, 16, 16)
+        tab_layout.setSpacing(12)
+
+        self._activity_plot_container = QFrame()
+        self._activity_plot_container.setObjectName("Card")
+        self._activity_plot_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._activity_plot_layout = QVBoxLayout(self._activity_plot_container)
+        self._activity_plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._activity_plot_layout.setSpacing(0)
+        tab_layout.addWidget(self._activity_plot_container, stretch=1)
+
+        tab_layout.addWidget(make_divider())
+
+        act_group = QGroupBox("Well Activity Parameters")
+        act_layout = QGridLayout()
+        act_layout.setSpacing(8)
+        act_layout.setContentsMargins(16, 18, 16, 12)
+        act_group.setLayout(act_layout)
+
+        bw_lbl = QLabel("KDE bandwidth:")
+        bw_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent")
+        act_layout.addWidget(bw_lbl, 0, 0)
+
+        self._act_bw_entry = QLineEdit()
+        act_layout.addWidget(self._act_bw_entry, 0, 1)
+
+        tab_layout.addWidget(act_group)
+
+        action_bar = QFrame()
+        action_bar.setObjectName("Card")
+        bar_layout = QHBoxLayout(action_bar)
+        bar_layout.setContentsMargins(16, 10, 16, 10)
+        bar_layout.setSpacing(10)
+
+        update_btn = make_primary_btn("▶  Update Plot")
+        update_btn.clicked.connect(self._update_activity_plot)
+        bar_layout.addWidget(update_btn)
+
+        reset_btn = make_secondary_btn("↺  Reset")
+        reset_btn.clicked.connect(self._reset_activity)
+        bar_layout.addWidget(reset_btn)
+        bar_layout.addStretch()
+
+        tab_layout.addWidget(action_bar)
+        self.tabs.addTab(activity_tab, "Well Activity")
+
+    def _default_nbd_values(self) -> None:
+        p = self.parameters
+        idx = self._th_method_combo.findText(p["thresholding method"])
+        if idx >= 0:
+            self._th_method_combo.setCurrentIndex(idx)
+        _set_entry(self._min_channels_entry,  p["min channels"])
+        _set_entry(self._nbd_kde_bw_entry,    p["nbd kde bandwidth"])
+
+    def _reset_nbd(self) -> None:
+        self._default_nbd_values()
+        self._update_nbd_plot()
+
+    def _update_nbd_plot(self) -> None:
+        temp = copy.deepcopy(self.parameters)
+        temp["min channels"]         = _get_float(self._min_channels_entry)
+        temp["thresholding method"]  = self._th_method_combo.currentText()
+        temp["nbd kde bandwidth"]    = _get_float(self._nbd_kde_bw_entry)
+        temp["output path"]          = self.folder
+        self._plot_network_bursts(temp)
+
+    def _plot_network_bursts(self, parameters: dict) -> None:
+        fig = network_burst_detection(
+            wells=[self.well],
+            parameters=parameters,
+            plot_electrodes=True,
+            savedata=False,
+            save_figures=False,
+        )
+        self._apply_dark_theme(fig)
+        self._replace_canvas(self._nbd_plot_layout, self._nbd_plot_container, fig, toolbar=True)
+
+    def _reset_activity(self) -> None:
+        _set_entry(self._act_bw_entry, self._DEFAULT_BW)
+        self._update_activity_plot()
+
+    def _update_activity_plot(self) -> None:
+        self._plot_well_activity()
+
+    def _plot_well_activity(self) -> None:
+        fig = well_electrodes_kde(
+            outputpath=self.folder,
+            well=self.well,
+            parameters=self.parameters,
+            bandwidth=_get_float(self._act_bw_entry),
+        )
+
+        self._apply_dark_theme(fig, axis_colour="#586d97")
+        self._replace_canvas(self._activity_plot_layout, self._activity_plot_container, fig, toolbar=True)
+
+    @staticmethod
+    def _apply_dark_theme(fig, axis_colour: str = None) -> None:
+        bg  = DARK_BG
+        fg  = axis_colour if axis_colour else TEXT_PRIMARY
+
+        fig.set_facecolor(bg)
         for ax in fig.axes:
-            ax.set_facecolor(bgcolor)
-            # Change the other colours
-            ax.xaxis.label.set_color(axiscolour)
-            ax.yaxis.label.set_color(axiscolour)
-            for side in ['top', 'bottom', 'left', 'right']:
-                ax.spines[side].set_color(axiscolour)
-            ax.tick_params(axis='x', colors=axiscolour)
-            ax.tick_params(axis='y', colors=axiscolour)
-            ax.set_title(label=ax.get_title(),color=axiscolour)
+            ax.set_facecolor(bg)
+            ax.xaxis.label.set_color(fg)
+            ax.yaxis.label.set_color(fg)
+            for spine in ax.spines.values():
+                spine.set_color(fg)
+            ax.tick_params(colors=fg)
+            ax.title.set_color(fg)
 
-        plot_canvas = FigureCanvasTkAgg(fig, master=self.nbd_plot_frame)  
-        plot_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
-        toolbarframe=ttk.Frame(master=self.nbd_plot_frame)
-        toolbarframe.grid(row=1, column=0, sticky='s')
-        toolbar = NavigationToolbar2Tk(plot_canvas, toolbarframe)
-        toolbar.config(background=self.parent.primary_1)
-        toolbar._message_label.config(background=self.parent.primary_1)
-        for button in toolbar.winfo_children():
-            button.config(background=self.parent.primary_1)
-        toolbar.update()
-        plot_canvas.draw()
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    def default_values(self):
-        self.th_method_nb_var.set(self.parameters["thresholding method"])
-        self.min_channels_nb_entry.delete(0,END)
-        self.min_channels_nb_entry.insert(0,self.parameters["min channels"])
-        self.nbd_kde_bandwidth_nb_entry.delete(0, END)
-        self.nbd_kde_bandwidth_nb_entry.insert(0, self.parameters["nbd kde bandwidth"])
+    def _replace_canvas(self, layout, container, fig, toolbar: bool = False) -> None:
+        self._clear_layout(layout)
 
-    def update_plot(self):
-        temp_parameters=copy.deepcopy(self.parameters)
-        temp_parameters["min channels"]=float(self.min_channels_nb_entry.get())
-        temp_parameters["thresholding method"]=str(self.th_method_nb_var.get())
-        temp_parameters["nbd kde bandwidth"]=float(self.nbd_kde_bandwidth_nb_entry.get())
-        
-        # Update the output folder path, as this might have changed since the original analysis
-        temp_parameters['output path']=self.folder
+        canvas = FigureCanvasQTAgg(fig)
+        canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(canvas, stretch=1)
 
-        self.plot_network_bursts(parameters=temp_parameters)
+        if toolbar:
+            nav = NavigationToolbar2QT(canvas, container)
+            nav.setStyleSheet(TOOLBAR_STYLESHEET)
+            palette = nav.palette()
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(TEXT_PRIMARY))
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(TEXT_PRIMARY))
+            nav.setPalette(palette)
+            layout.addWidget(nav)
 
-    def reset(self):
-        self.default_values()
-        self.update_plot()
-
-    def plot_well_activity(self):
-        fig=well_electrodes_kde(outputpath=self.folder, well=self.well, parameters=self.parameters, bandwidth=float(self.el_act_bw_entry.get()))
-        
-        # Check which colorscheme we have to use
-        axiscolour="#586d97"
-        bgcolor=self.parent.gray_4
-        
-        fig.set_facecolor(bgcolor)
-        for ax in fig.axes:
-            ax.set_facecolor(bgcolor)
-            # Change the other colours
-            ax.xaxis.label.set_color(axiscolour)
-            ax.yaxis.label.set_color(axiscolour)
-            for side in ['top', 'bottom', 'left', 'right']:
-                ax.spines[side].set_color(axiscolour)
-            ax.tick_params(axis='x', colors=axiscolour)
-            ax.tick_params(axis='y', colors=axiscolour)
-            ax.set_title(label=ax.get_title(),color=axiscolour)
-
-        plot_canvas = FigureCanvasTkAgg(fig, master=self.electrode_activity_plot_frame)  
-        plot_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
-        toolbarframe=ttk.Frame(master=self.electrode_activity_plot_frame)
-        toolbarframe.grid(row=1, column=0)
-        toolbar = NavigationToolbar2Tk(plot_canvas, toolbarframe)
-        toolbar.config(background=self.parent.primary_1)
-        toolbar._message_label.config(background=self.parent.primary_1)
-        for button in toolbar.winfo_children():
-            button.config(background=self.parent.primary_1)
-        toolbar.update()
-        plot_canvas.draw()
-
-    def well_activity_update_plot(self):
-        self.plot_well_activity()
-
-    def reset_electrode_activity(self):
-        self.el_act_bw_entry.delete(0, END)
-        self.el_act_bw_entry.insert(0, self.def_bw_value)
-        self.well_activity_update_plot()
+        canvas.draw()

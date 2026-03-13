@@ -67,7 +67,7 @@ def get_default_parameters():
     return parameters
 
 class QtStream:
-    """Redirect sys.stdout so that print() calls inside analyse_wells emit a Qt signal."""
+    """Redirect sys.stdout so that print() calls inside analyse_wells emit a Qt signal"""
     def __init__(self, signal):
         self._signal = signal
 
@@ -86,7 +86,7 @@ class AnalysisWorker(QObject):
     """
     progress_updated = pyqtSignal(int, int)
     log_message      = pyqtSignal(str)
-    finished         = pyqtSignal(bool)
+    finished         = pyqtSignal(bool, str)
 
     def __init__(self, filepath, sampling_rate, electrode_amnt, parameters):
         super().__init__()
@@ -95,6 +95,7 @@ class AnalysisWorker(QObject):
         self.electrode_amnt = electrode_amnt
         self.parameters     = parameters
         self._stop_event    = threading.Event()
+        self.output_path    = None
 
     def request_stop(self):
         self._stop_event.set()
@@ -104,7 +105,7 @@ class AnalysisWorker(QObject):
         sys.stdout = QtStream(self.log_message)
         success = False
         try:
-            analyse_wells(
+            self.output_path = analyse_wells(
                 fileadress      = self.filepath,
                 sampling_rate   = self.sampling_rate,
                 electrode_amnt  = self.electrode_amnt,
@@ -118,7 +119,7 @@ class AnalysisWorker(QObject):
             success = False
         finally:
             sys.stdout = original_stdout
-            self.finished.emit(success)
+            self.finished.emit(success, self.output_path)
 
 def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
     """
@@ -185,8 +186,8 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}, prog
 
     Returns
     -------
-    output : pd.dataframe
-        Pandas dataframe containing features for the different wells.
+    outputpath : str
+        Path to folder containing analysis results
 
     Notes
     -----
@@ -470,4 +471,4 @@ def analyse_wells(fileadress, sampling_rate, electrode_amnt, parameters={}, prog
     # Close the analysis
     print(f"It took {time.time()-analysis_time} seconds to analyse {fileadress}")
     print("Done")
-    return output
+    return outputpath

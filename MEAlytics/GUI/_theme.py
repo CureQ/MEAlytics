@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap, QPainter, QBrush
 
+# Default
 DARK_BG        = "#0f1117"
 SURFACE_1      = "#161b27"
 SURFACE_2      = "#1c2333"
@@ -19,8 +20,40 @@ SUCCESS        = "#22c55e"
 WARNING        = "#f59e0b"
 DANGER         = "#ef4444"
 TEXT_PRIMARY   = "#e8edf5"
-TEXT_SECONDARY = "#8b95a8"
+TEXT_SECONDARY = "#9da5b4"
 TEXT_MUTED     = "#4a5568"
+
+# Dark orange
+# DARK_BG = "#0e0e0e"
+# SURFACE_1 = "#161616"
+# SURFACE_2 = "#1c1c1c"
+# SURFACE_3 = "#222222"
+# BORDER_COLOR = "#242424"
+# ACCENT = "#ff4500"
+# ACCENT_HOVER = "#ff8c00"
+# ACCENT_MUTED = "#3a1a00"
+# SUCCESS = "#39d353"
+# WARNING = "#ffd60a"
+# DANGER = "#ff2d55"
+# TEXT_PRIMARY = "#f5f5f5"
+# TEXT_SECONDARY= "#707070"
+# TEXT_MUTED = "#333333"
+
+# Light mode
+# DARK_BG       = "#f0f2f5"
+# SURFACE_1     = "#ffffff"
+# SURFACE_2     = "#e8ecf2"
+# SURFACE_3     = "#dce1eb"
+# BORDER_COLOR  = "#c5cdd9"
+# ACCENT        = "#2563eb"
+# ACCENT_HOVER  = "#1d4ed8"
+# ACCENT_MUTED  = "#dbeafe"
+# SUCCESS       = "#16a34a"
+# WARNING       = "#d97706"
+# DANGER        = "#dc2626"
+# TEXT_PRIMARY  = "#0f172a"
+# TEXT_SECONDARY= "#475569"
+# TEXT_MUTED    = "#94a3b8"
 
 STYLESHEET = f"""
 /* ── Global ── */
@@ -207,11 +240,15 @@ QComboBox QAbstractItemView {{
 
 /* ── ScrollArea ── */
 QScrollArea {{ border: none; background: transparent; }}
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+QAbstractScrollArea::corner {{ background: {DARK_BG}; border: none; }}
+
 QScrollBar:vertical {{
-    background: {SURFACE_1};
+    background: {DARK_BG};
     width: 6px;
     border-radius: 3px;
     margin: 0;
+    border: none;
 }}
 QScrollBar::handle:vertical {{
     background: {BORDER_COLOR};
@@ -221,7 +258,26 @@ QScrollBar::handle:vertical {{
 QScrollBar::handle:vertical:hover {{
     background: {TEXT_MUTED};
 }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+
+QScrollBar:horizontal {{
+    background: {DARK_BG};
+    height: 6px;
+    border-radius: 3px;
+    margin: 0;
+    border: none;
+}}
+QScrollBar::handle:horizontal {{
+    background: {BORDER_COLOR};
+    border-radius: 3px;
+    min-width: 30px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {TEXT_MUTED};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; }}
 
 /* ── Progress bar ── */
 QProgressBar {{
@@ -300,7 +356,7 @@ QCheckBox::indicator:checked {{
 #MetaLabel {{
     background-color: {SURFACE_1};
     font-size: 12px;
-    color: {TEXT_MUTED};
+    color: {TEXT_SECONDARY};
 }}
 #StatusBadge {{
     background-color: {ACCENT_MUTED};
@@ -337,6 +393,111 @@ QCheckBox::indicator:checked {{
     background-color: {SURFACE_1};
     border-right: 1px solid {BORDER_COLOR};
 }}
+QTabWidget::pane {{
+    border: 1px solid {BORDER_COLOR};
+    border-radius: 8px;
+    background-color: {SURFACE_1};
+}}
+QTabBar::tab {{
+    background-color: {SURFACE_2};
+    color: {TEXT_SECONDARY};
+    border: 1px solid {BORDER_COLOR};
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 8px 20px;
+    margin-right: 2px;
+    font-size: 13px;
+    font-weight: 500;
+}}
+QTabBar::tab:selected {{
+    background-color: {SURFACE_1};
+    color: {ACCENT};
+    border-bottom: 2px solid {ACCENT};
+}}
+QTabBar::tab:hover:!selected {{
+    background-color: {SURFACE_3};
+    color: {TEXT_PRIMARY};
+}}
+"""
+
+TOOLBAR_STYLESHEET = f"""
+QToolBar {{
+    background-color: {SURFACE_2};
+    border-top: 1px solid {BORDER_COLOR};
+    border-bottom: none;
+    border-left: none;
+    border-right: none;
+    spacing: 2px;
+    padding: 2px 4px;
+}}
+QToolButton {{
+    background-color: transparent;
+    color: {TEXT_PRIMARY};
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 3px;
+}}
+QToolButton:hover {{
+    background-color: {SURFACE_3};
+    border-color: {BORDER_COLOR};
+}}
+QToolButton:checked {{
+    background-color: {ACCENT_MUTED};
+    border-color: {ACCENT};
+}}
+QLabel {{
+    color: {TEXT_SECONDARY};
+    font-size: 12px;
+}}
+QSlider::groove:horizontal {{
+    height: 4px;
+    background: {SURFACE_3};
+    border-radius: 2px;
+}}
+QSlider::handle:horizontal {{
+    background: {ACCENT};
+    border: none;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border-radius: 2px;
+}}
+"""
+
+_BTN_STYLE_DEFAULT = f"""
+    QPushButton {{
+        background-color: {SURFACE_3};
+        color: {TEXT_PRIMARY};
+        border: 1px solid {BORDER_COLOR};
+        border-radius: 0px;
+        font-size: 14px;
+        font-weight: 600;
+    }}
+    QPushButton:hover {{
+        background-color: {ACCENT_MUTED};
+        border-color: {ACCENT};
+        color: {ACCENT};
+    }}
+"""
+
+_BTN_STYLE_SELECTED = f"""
+    QPushButton {{
+        background-color: {ACCENT_MUTED};
+        color: {ACCENT};
+        border: 2px solid {ACCENT};
+        border-radius: 0px;
+        font-size: 14px;
+        font-weight: 700;
+    }}
+    QPushButton:hover {{
+        background-color: {ACCENT_MUTED};
+        border-color: {ACCENT};
+        color: {ACCENT};
+    }}
 """
 
 SIDEBAR_WIDTH  = 220
@@ -362,4 +523,18 @@ def icon_text_btn(icon_char, label, object_name="NavBtn"):
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     btn.setMinimumHeight(40)
+    return btn
+
+def make_primary_btn(label: str, parent=None) -> QPushButton:
+    btn = QPushButton(label, parent)
+    btn.setObjectName("PrimaryBtn")
+    btn.setMinimumHeight(38)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    return btn
+
+def make_secondary_btn(label: str, parent=None) -> QPushButton:
+    btn = QPushButton(label, parent)
+    btn.setObjectName("SecondaryBtn")
+    btn.setMinimumHeight(38)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
     return btn

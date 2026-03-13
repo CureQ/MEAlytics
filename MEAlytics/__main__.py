@@ -1,4 +1,5 @@
-# pyinstaller -n "MEAlytics" __main__.py --icon="MEAlytics_logo.ico" --add-data="./GUI/MEAlytics_logo.ico":"." --add-data="./GUI/theme.json":"." -y
+# The following command was used to bundle MEAlytics as an executable
+# pyinstaller -n "MEAlytics" __main__.py --icon="MEAlytics_logo.ico" --add-data="./GUI/MEAlytics_logo.ico":"." --add-data="./GUI/MEAlytics_logo.png":"." -y
 
 import argparse
 import os

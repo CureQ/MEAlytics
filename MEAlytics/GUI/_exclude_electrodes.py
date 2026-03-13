@@ -1,431 +1,723 @@
-# Imports
-from tkinter import filedialog
-from functools import partial
-import os
 import json
-from pathlib import Path
+import os
 import threading
+from functools import partial
+from pathlib import Path
 
-# External imports
-import customtkinter as ctk
-import pandas as pd
 import numpy as np
-from CTkMessagebox import CTkMessagebox
-from PIL import ImageGrab
+import pandas as pd
 
-# Imports from package
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
 from MEAlytics.core._features import recalculate_features
+from MEAlytics.GUI._theme import (
+    ACCENT,
+    ACCENT_MUTED,
+    BORDER_COLOR,
+    DANGER,
+    STYLESHEET,
+    SURFACE_1,
+    SURFACE_2,
+    SURFACE_3,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    WARNING,
+    make_divider,
+    make_label,
+)
+from MEAlytics.GUI._helpers import _well_grid, _electrode_grid, _adjust_color
 
-class recalculate_features_class(ctk.CTkFrame):
-    """
-    Recalculate features while excluding certain electrodes from wells
-    """
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.parent=parent
+_COLOR_SELECTED   = "#3d8ef0"
+_COLOR_UNSELECTED = "#ef4444"
+_COLOR_SELECTED_HOVER   = "#1e3a6e"
+_COLOR_UNSELECTED_HOVER = "#7f1d1d"
 
-        # Weight configuration
-        self.columnconfigure(1, weight=1)
-        self.rowconfigure(0, weight=1)
+_FILE_SELECTED_STYLE = f"""
+    QPushButton {{
+        background-color: {ACCENT_MUTED};
+        color: {_COLOR_SELECTED};
+        border: 1px solid {_COLOR_SELECTED};
+        border-radius: 7px;
+        text-align: left;
+        padding: 6px 10px;
+        font-size: 12px;
+    }}
+    QPushButton:hover {{
+        background-color: {_COLOR_SELECTED_HOVER};
+    }}
+"""
 
-        # Control frame - load different experiments/initiate recalculation
-        self.control_frame = ctk.CTkFrame(master=self)
-        self.control_frame.grid(row=0, column=0, pady=10, padx=10, sticky='nesw')
+_FILE_DESELECTED_STYLE = f"""
+    QPushButton {{
+        background-color: {SURFACE_3};
+        color: {TEXT_MUTED};
+        border: 1px solid {BORDER_COLOR};
+        border-radius: 7px;
+        text-align: left;
+        padding: 6px 10px;
+        font-size: 12px;
+        text-decoration: line-through;
+    }}
+    QPushButton:hover {{
+        background-color: {SURFACE_2};
+        color: {TEXT_SECONDARY};
+    }}
+"""
 
-        # Selected files frame - display files selected for recalculation
-        self.selected_files_frame = ctk.CTkScrollableFrame(master=self)
-        self.selected_files_frame.grid(row=0, column=1, pady=10, padx=10, sticky='nesw')
+class _ConfigThumbnail(QWidget):
+    _CELL   = 6    # px per electrode square
+    _GAP    = 3    # px gap between wells
+    _MARGIN = 4    # px outer margin
 
-        # Control frame buttons
-        self.select_folder_button = ctk.CTkButton(master=self.control_frame, text='Load folder', command=self.load_folder)
-        self.select_folder_button.grid(row=0, column=0, pady=(10, 5), padx=10, sticky='nesw')
-        
-        self.edit_config_button = ctk.CTkButton(master=self.control_frame, text='Edit/New configuration', command=self.edit_configuration_func)
-        self.edit_config_button.grid(row=1, column=0, pady=(5, 5), padx=10, sticky='nesw')
+    def __init__(self):
+        super().__init__()
+        self._config: np.ndarray | None = None
+        self._well_amnt: int = 0
+        self._electrode_amnt: int = 0
+        self.setMinimumSize(60, 40)
+        self._recalc_size()
 
-        self.recalculate_features_button = ctk.CTkButton(master=self.control_frame, text='Recalculate features', command=self.recalculate_features_button_func)
-        self.recalculate_features_button.grid(row=2, column=0, pady=(5, 10), padx=10, sticky='nesw')
+    def set_config(self, config: np.ndarray, well_amnt: int, electrode_amnt: int):
+        self._config = config
+        self._well_amnt = well_amnt
+        self._electrode_amnt = electrode_amnt
+        self._recalc_size()
+        self.update()
 
-        # Config image
-        self.config_image = ctk.CTkLabel(master=self.control_frame, text="")
-        self.config_image.grid(row=3, column=0, pady=10, padx=10, sticky='nesw')
-
-        return_to_main = ctk.CTkButton(master=self, text="Return to main menu", command=lambda: self.parent.show_frame(self.parent.home_frame), fg_color=parent.gray_1)
-        return_to_main.grid(row=1, column=0, pady=10, padx=10, sticky='nesw')
-
-        self.file_buttons = {}
-        self.well_amnt = 0
-        self.electrode_amnt = 0
-        self.configuration = None
-        self.config_selected = False
-
-    def load_folder(self):
-        """
-        Walk through a folder and collect all files ending with 'Features.csv'
-        """
-        folder=filedialog.askdirectory()
-        if folder == '':
+    def _recalc_size(self):
+        if self._well_amnt == 0:
             return
-        well_amnts=[]
-        electrode_amnts=[]
-        file_names=[]
+        mask = _electrode_grid(self._electrode_amnt)
+        e_cols, e_rows = mask.shape[1], mask.shape[0]
+        w_cols, w_rows = _well_grid(self._well_amnt)
 
-        # Walk through folder
-        for root, dirs, files in os.walk(folder):
-            for file in files:
-                if file.endswith("Features.csv") and not "Electrode" in file:
-                    data=pd.read_csv(os.path.join(root, file))
-                    well_amnts.append(len(data))
-                    file_names.append(os.path.join(root, file))
-                
-                    # Also get parameters.json to get electrode amount
-                    try:
-                        with open(os.path.join(root, 'parameters.json'), "r") as json_file:
-                            parameters = json.load(json_file)
-                        electrode_amnts.append(parameters['electrode amount'])
-                    except:
-                        CTkMessagebox(title="Error",
-                              message=f"Could not find a complementary 'parameters.json' file for '{file}'. Please make sure every feature file is accompanied by the original 'parameters.json' file.",
-                              icon="cancel",
-                              wraplength=400)
-                        return
-                    
-        # Check if the well layout is the same for all experiments
-        if not(np.min(well_amnts) == np.max(well_amnts)):
-            CTkMessagebox(title="Error",
-                              message='Not all experiments have the same amount of wells, please remove the exceptions from the folder.',
-                              icon="cancel",
-                              wraplength=400)
-            return
-        else:
-            self.well_amnt = np.min(well_amnts)
+        cell = self._CELL
+        gap  = self._GAP
+        m    = self._MARGIN
 
-        # Check if the electrode amount is the same for all experiments
-        if not(np.min(electrode_amnts) == np.max(electrode_amnts)):
-            CTkMessagebox(title="Error",
-                              message='Not all experiments have the same amount of electrodes per well, please remove the exceptions from the folder.',
-                              icon="cancel",
-                              wraplength=400)
-            return
-        else:
-            self.electrode_amnt = np.min(electrode_amnts)
+        total_w = m*2 + w_cols * (e_cols * cell + gap) - gap
+        total_h = m*2 + w_rows * (e_rows * cell + gap) - gap
+        self.setFixedSize(total_w, total_h)
 
-
-        self.display_selected_files(file_names)
-
-    def display_selected_files(self, files):
-        """
-        Display all selected featurefiles including tickbox
-        """
-        # Destroy existing buttons
-        for btn in self.file_buttons.values():
-            btn["button"].destroy()
-        self.file_buttons = {}
-
-        # Loop over files and create buttons
-        for i, file in enumerate(files):
-            pady=(2.5, 2.5)
-            if i == 0: pady = (5, 2.5)
-            if i == len(files): pady = (2.5, 5)
-
-            file_button = ctk.CTkButton(master=self.selected_files_frame, text=file, anchor='w', fg_color=self.parent.selected_color, hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6), command=partial(self.toggle_button_state, file))
-            file_button.grid(row=i, column=0, padx=5 , pady=pady, sticky='nesw')
-
-            self.file_buttons[file] = {
-                "button": file_button,
-                "state": True
-            }
-
-    def toggle_button_state(self, file):
-        """
-        Toggle button state
-        """
-
-        if self.file_buttons[file]["state"]:
-            fg_color=self.parent.theme["CTkButton"]["fg_color"]
-            hover_color=self.parent.theme["CTkButton"]["hover_color"]
-            self.file_buttons[file]["state"] = False
-            self.file_buttons[file]["button"].configure(fg_color=fg_color, hover_color=hover_color)
-        else:
-            self.file_buttons[file]["state"] = True
-            self.file_buttons[file]["button"].configure(fg_color=self.parent.selected_color, hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6))
-
-    def edit_configuration_func(self):
-        """Open window to edit configuration"""
-        if len(self.file_buttons) == 0:
-            CTkMessagebox(title="Error",
-                              message='Please first select a folder before editing a configuration, the layout of the configuration is determined by the selected files.',
-                              icon="cancel",
-                              wraplength=400)
+    def paintEvent(self, event):
+        if self._config is None or self._well_amnt == 0:
             return
 
-        edit_configuration(parent=self.parent, main_window=self, wells=self.well_amnt, electrodes=self.electrode_amnt, existing_config=self.configuration)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
-    def recalculate_features_func(self):
-        """Function recalculating the features, called as a thread"""
-        failed = []
-        finished = []
-        errors = []
-        outputtext=""
+        mask    = _electrode_grid(self._electrode_amnt)
+        e_cols  = mask.shape[1]
+        e_rows  = mask.shape[0]
+        w_cols, w_rows = _well_grid(self._well_amnt)
 
-        for i, file in enumerate(self.selected_files):
-            filepath = Path(file)
+        cell = self._CELL
+        gap  = self._GAP
+        m    = self._MARGIN
 
-            try:
-                # Retrieve neccesary parameters
-                with open(os.path.join(filepath.parent, "parameters.json")) as json_file:
-                    parameters = json.load(json_file)
+        config_idx = 0
 
-                recalculate_features(outputfolder=filepath.parent, well_amnt=self.well_amnt, electrode_amnt=self.electrode_amnt, electrodes=self.configuration, sampling_rate=parameters["sampling rate"], measurements=parameters["measurements"])
-            
-                print(f"Recalculated features for: {filepath.parent}")
-                finished.append(filepath.stem)
-            except Exception as error:
-                failed.append(filepath.stem)
-                errors.append(error)
-            self.progressbar.set((i+1)/len(self.selected_files))
-    
-        outputtext += "Finished files:\n" if len(finished) > 0 else "Did not finish any files\n"
-        for file in finished:
-            outputtext += f"{file}\n"
+        for wr in range(w_rows):
+            for wc in range(w_cols):
+                well_x = m + wc * (e_cols * cell + gap)
+                well_y = m + wr * (e_rows * cell + gap)
 
-        outputtext += "Failed files:" if len(failed) > 0 else ""
-        for i, file in enumerate(failed):
-            outputtext += f"\n{file}:"
-            outputtext += f"\n\t{errors[i]}\n"
+                for er in range(e_rows):
+                    for ec in range(e_cols):
+                        if not mask[er, ec]:
+                            continue
+                        active = bool(self._config[config_idx]) if config_idx < len(self._config) else True
+                        color  = QColor(_COLOR_SELECTED if active else _COLOR_UNSELECTED)
+                        painter.fillRect(
+                            well_x + ec * cell,
+                            well_y + er * cell,
+                            cell - 1,
+                            cell - 1,
+                            color,
+                        )
+                        config_idx += 1
 
-        CTkMessagebox(message=outputtext, option_1="Ok", title="Recalculated features", width=800, wraplength=750)
+        painter.end()
 
+class EditConfigurationDialog(QDialog):
+    def __init__(
+        self,
+        wells: int,
+        electrodes: int,
+        existing_config: np.ndarray | None = None,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle("MEAlytics — Electrode Configuration")
+        self.setStyleSheet(STYLESHEET)
+        self.setMinimumSize(400, 300)
 
-        self.popup.destroy()
+        self._wells      = wells
+        self._electrodes = electrodes
+        self._electrode_buttons: dict[str, dict] = {}
 
-    def recalculate_features_button_func(self):
-        """Feature called by the button, performs checkes and start 'recalculate_features_func' as a thread"""
-        # Check if config has been selected
-        if not self.config_selected:
-            CTkMessagebox(title="Error", message="No configuration selected, please create a configuration using 'Edit/New configuration'", icon="cancel", wraplength=400)
-            return
+        root = QHBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
 
-        # Retrieve all files that are selected
-        self.selected_files = []
+        ctrl = QWidget()
+        ctrl.setFixedWidth(190)
+        ctrl_layout = QVBoxLayout(ctrl)
+        ctrl_layout.setContentsMargins(0, 0, 0, 0)
+        ctrl_layout.setSpacing(12)
 
-        for file in list(self.file_buttons.keys()):
-            if self.file_buttons[file]["state"]:
-                self.selected_files.append(file)
-        
-        # Check if any files are selected
-        if len(self.selected_files) == 0:
-            CTkMessagebox(title="Error", message='No files selected', icon="cancel")
-            return
-        
-        # Initialize popup and progressbar
-        self.popup=ctk.CTkToplevel(self)
-        self.popup.title('Recalculating features')
-        try:
-            self.popup.after(250, lambda: self.popup.iconbitmap(os.path.join(self.parent.icon_path)))
-        except Exception as error:
-            print(error)
+        manage_card = QFrame()
+        manage_card.setObjectName("Card")
+        mc = QVBoxLayout(manage_card)
+        mc.setContentsMargins(16, 14, 16, 14)
+        mc.setSpacing(8)
+        mc.addWidget(make_label("Configuration", "SectionLabel"))
+        mc.addWidget(make_divider())
 
-        self.progress_label = ctk.CTkLabel(master=self.popup, text="Recalculating features...")
-        self.progress_label.grid(row=0, column=0, pady=(10, 5), padx=10, sticky='nesw')
+        for text, slot in [
+            ("Load configuration",  self._load_config),
+            ("Save configuration",  self._save_config),
+            ("Apply configuration", self._apply_config),
+        ]:
+            btn = QPushButton(text)
+            btn.setObjectName("SecondaryBtn" if text != "Apply configuration" else "PrimaryBtn")
+            btn.setMinimumHeight(36)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(slot)
+            mc.addWidget(btn)
 
-        self.progressbar=ctk.CTkProgressBar(master=self.popup, orientation='horizontal', mode='determinate', progress_color="#239b56", width=400)
-        self.progressbar.grid(row=1, column=0, pady=(5, 10), padx=10, sticky='nesw')
-        self.progressbar.set(0)
+        ctrl_layout.addWidget(manage_card)
 
-        process=threading.Thread(target=self.recalculate_features_func)
-        process.start()
+        sel_card = QFrame()
+        sel_card.setObjectName("Card")
+        sc = QVBoxLayout(sel_card)
+        sc.setContentsMargins(16, 14, 16, 14)
+        sc.setSpacing(8)
+        sc.addWidget(make_label("Selection", "SectionLabel"))
+        sc.addWidget(make_divider())
 
-class edit_configuration(ctk.CTkToplevel):
-    """
-    Create/save/edit electrode on/off configurations
+        for text, slot in [
+            ("Select all",   self._select_all),
+            ("Deselect all", self._deselect_all),
+        ]:
+            btn = QPushButton(text)
+            btn.setObjectName("SecondaryBtn")
+            btn.setMinimumHeight(36)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(slot)
+            sc.addWidget(btn)
 
-    Configurations are saved in json format, specifying wells, electrodes and which electrodes are turned on/off using a boolean array
-    """
-    def __init__(self, main_window, parent, wells, electrodes, existing_config=None):
-        super().__init__(parent)
-        self.parent=parent
-        self.main_window=main_window
+        ctrl_layout.addWidget(sel_card)
+        ctrl_layout.addStretch()
+        root.addWidget(ctrl)
 
-        try:
-            self.after(250, lambda: self.iconbitmap(os.path.join(parent.icon_path)))
-        except Exception as error:
-            print(error)
+        grid_card = QFrame()
+        grid_card.setObjectName("Card")
+        gc = QVBoxLayout(grid_card)
+        gc.setContentsMargins(16, 14, 16, 14)
+        gc.setSpacing(10)
+        gc.addWidget(make_label("Electrode Layout", "SectionLabel"))
+        gc.addWidget(make_divider())
 
-        self.title("Electrode configuration")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Weight configuration
-        self.columnconfigure(1, weight=1)
-        self.rowconfigure(0, weight=1)
+        self._grid_container = QWidget()
+        self._grid_layout = QGridLayout(self._grid_container)
+        self._grid_layout.setSpacing(10)
+        self._grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Control frame - load different experiments/initiate recalculation
-        self.control_frame = ctk.CTkFrame(master=self)
-        self.control_frame.grid(row=0, column=0, pady=0, padx=0, sticky='nesw')
+        scroll.setWidget(self._grid_container)
+        gc.addWidget(scroll, 1)
+        root.addWidget(grid_card, 1)
 
-        # Manage configuration buttons
-        self.manage_config_frame = ctk.CTkFrame(master=self.control_frame)
-        self.manage_config_frame.grid(row=0, column=0, pady=(10,5), padx=10, sticky='nesw')
-
-        self.select_config_button = ctk.CTkButton(master=self.manage_config_frame, text='Load configuration', command=self.load_config)
-        self.select_config_button.grid(row=0, column=0, pady=(10, 5), padx=10, sticky='nesw')
-        
-        self.save_config_button = ctk.CTkButton(master=self.manage_config_frame, text='Save configuration', command=self.save_config)
-        self.save_config_button.grid(row=1, column=0, pady=(5, 5), padx=10, sticky='nesw')
-        
-        self.apply_config_button = ctk.CTkButton(master=self.manage_config_frame, text='Apply configuration', command=self.apply_config)
-        self.apply_config_button.grid(row=2, column=0, pady=(5, 10), padx=10, sticky='nesw')
-
-        # Control selection
-        self.manage_config_frame = ctk.CTkFrame(master=self.control_frame)
-        self.manage_config_frame.grid(row=1, column=0, pady=(5,10), padx=10, sticky='nesw')
-
-        self.select_folder_button = ctk.CTkButton(master=self.manage_config_frame, text='Select all', command=self.select_all)
-        self.select_folder_button.grid(row=0, column=0, pady=(10, 5), padx=10, sticky='nesw')
-        
-        self.edit_config_button = ctk.CTkButton(master=self.manage_config_frame, text='Deselect all', command=self.deselect_all)
-        self.edit_config_button.grid(row=1, column=0, pady=(5, 10), padx=10, sticky='nesw')
-
-        # Electrode configuration frame
-        self.config_frame = ctk.CTkFrame(master=self)
-        self.config_frame.grid(row=0, column=1, pady=10, padx=10)
-
-        self.electrode_buttons = {}
-        self.well_frame_list = []
-
-        # Load buttons based on well/electrode config
-        self.create_buttons(wells, electrodes)
-
-        # If existing config was given, apply config
+        self._create_buttons(wells, electrodes)
         if existing_config is not None:
             for i, value in enumerate(existing_config):
                 if not value:
-                    self.toggle_button_state(str(i+1))            
+                    self._toggle(str(i + 1))
 
-    def create_buttons(self, wells, electrodes):
-        """Create buttons representing electrodes""" 
+        self._applied_config: np.ndarray | None = None
+        self._resize_to_content()
 
-        # Create frames representing wells to hold buttons
-        width, height = self.parent.calculate_well_grid(wells)
-    
-        self.electrode_buttons = {}
-        self.well_frame_list = []
-
+    def _create_buttons(self, wells: int, electrodes: int):
+        self._electrode_buttons.clear()
+        mask = _electrode_grid(electrodes)
+        w_cols, w_rows = _well_grid(wells)
+        btn_size = 28
         counter = 1
 
-        for h in range(height):
-            for w in range(width):
-                well_frame = ctk.CTkFrame(master=self.config_frame)
-                well_frame.grid(row=h, column=w, pady=10, padx=10)
-                self.well_frame_list.append(well_frame)
+        for wr in range(w_rows):
+            for wc in range(w_cols):
+                well_frame = QFrame()
+                well_frame.setObjectName("Card")
+                well_frame.setStyleSheet(
+                    f"QFrame#Card {{ background-color: {SURFACE_2}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; }}"
+                )
+                wf_layout = QGridLayout(well_frame)
+                wf_layout.setSpacing(0)
+                wf_layout.setContentsMargins(4, 4, 4, 4)
 
-        electrode_layout = self.parent.calculate_electrode_grid(num_items = electrodes)
-        electrode_button_size=20
+                for er in range(mask.shape[0]):
+                    for ec in range(mask.shape[1]):
+                        if mask[er, ec]:
+                            btn = QPushButton()
+                            btn.setFixedSize(btn_size, btn_size)
+                            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                            btn.setToolTip(f"Electrode {counter}")
+                            self._apply_btn_style(btn, active=True)
+                            btn.clicked.connect(partial(self._toggle, str(counter)))
+                            wf_layout.addWidget(btn, er, ec)
+                            self._electrode_buttons[str(counter)] = {
+                                "button": btn,
+                                "state": True,
+                            }
+                            counter += 1
 
-        for well_frame in self.well_frame_list:
-            for x in range(electrode_layout.shape[0]):
-                for y in range(electrode_layout.shape[1]):
-                    if electrode_layout[x,y]:
-                        electrode_btn=ctk.CTkButton(master=well_frame,
-                                                    text="",
-                                                    height=electrode_button_size,
-                                                    width=electrode_button_size,
-                                                    fg_color=self.parent.selected_color,
-                                                    hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6),
-                                                    command=partial(self.toggle_button_state, str(counter))
+                self._grid_layout.addWidget(well_frame, wr, wc)
+
+    def _apply_btn_style(self, btn: QPushButton, active: bool):
+        color = _COLOR_SELECTED if active else _COLOR_UNSELECTED
+        hover = _adjust_color(color, 0.7)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                border: none;
+                border-radius: 0px;
+            }}
+            QPushButton:hover {{ background-color: {hover}; }}
+        """)
+
+    def _resize_to_content(self):
+        self._grid_container.adjustSize()
+        self.adjustSize()
+
+    def _toggle(self, electrode: str):
+        entry = self._electrode_buttons[electrode]
+        entry["state"] = not entry["state"]
+        self._apply_btn_style(entry["button"], active=entry["state"])
+
+    def _select_all(self):
+        for key, entry in self._electrode_buttons.items():
+            entry["state"] = True
+            self._apply_btn_style(entry["button"], active=True)
+
+    def _deselect_all(self):
+        for key, entry in self._electrode_buttons.items():
+            entry["state"] = False
+            self._apply_btn_style(entry["button"], active=False)
+
+    def _save_config(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Configuration", "", "NumPy files (*.npy);;All Files (*)"
+        )
+        if not path:
+            return
+        config = np.array([e["state"] for e in self._electrode_buttons.values()])
+        np.save(path, config)
+        QMessageBox.information(self, "Saved", f"Configuration saved to:\n{path}")
+
+    def _load_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Configuration", "", "NumPy files (*.npy);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            config = np.load(path)
+        except Exception:
+            QMessageBox.critical(self, "Error", "Could not load the configuration file.")
+            return
+
+        if len(config) != len(self._electrode_buttons):
+            QMessageBox.critical(
+                self, "Error",
+                f"The configuration has {len(config)} electrodes, but the current "
+                f"experiments have {len(self._electrode_buttons)}."
+            )
+            return
+
+        for i, value in enumerate(config):
+            entry = self._electrode_buttons[str(i + 1)]
+            entry["state"] = bool(value)
+            self._apply_btn_style(entry["button"], active=bool(value))
+
+    def _apply_config(self):
+        self._applied_config = np.array([e["state"] for e in self._electrode_buttons.values()])
+        self.accept()
+
+    def get_config(self) -> np.ndarray | None:
+        return self._applied_config
+
+class ExcludeElectrodesWindow(QMainWindow):
+    _recalc_done = pyqtSignal(list, list, list)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("MEAlytics - Exclude Electrodes")
+        self.resize(1000, 640)
+        self.setMinimumSize(720, 480)
+        self.setStyleSheet(STYLESHEET)
+
+        self._file_buttons: dict[str, dict] = {}
+        self._well_amnt: int = 0
+        self._electrode_amnt: int = 0
+        self._configuration: np.ndarray | None = None
+        self._config_selected: bool = False
+
+        self._recalc_done.connect(self._on_recalculation_done)
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
+
+        root.addWidget(self._build_control_panel(), 0)
+        root.addWidget(self._build_file_panel(), 1)
+
+    def _build_control_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setFixedWidth(220)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        actions_card = QFrame()
+        actions_card.setObjectName("Card")
+        ac = QVBoxLayout(actions_card)
+        ac.setContentsMargins(16, 14, 16, 14)
+        ac.setSpacing(8)
+        ac.addWidget(make_label("Actions", "SectionLabel"))
+        ac.addWidget(make_divider())
+
+        load_btn = QPushButton("Load Folder")
+        load_btn.setObjectName("PrimaryBtn")
+        load_btn.setMinimumHeight(38)
+        load_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        load_btn.clicked.connect(self._load_folder)
+        ac.addWidget(load_btn)
+
+        edit_btn = QPushButton("Edit / New Configuration")
+        edit_btn.setObjectName("SecondaryBtn")
+        edit_btn.setMinimumHeight(38)
+        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.clicked.connect(self._edit_configuration)
+        ac.addWidget(edit_btn)
+
+        recalc_btn = QPushButton("Recalculate Features")
+        recalc_btn.setObjectName("PrimaryBtn")
+        recalc_btn.setMinimumHeight(38)
+        recalc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        recalc_btn.clicked.connect(self._recalculate_features_btn)
+        ac.addWidget(recalc_btn)
+
+        layout.addWidget(actions_card)
+
+        # Config preview card
+        preview_card = QFrame()
+        preview_card.setObjectName("Card")
+        pc = QVBoxLayout(preview_card)
+        pc.setContentsMargins(16, 14, 16, 14)
+        pc.setSpacing(8)
+        pc.addWidget(make_label("Current Configuration", "SectionLabel"))
+        pc.addWidget(make_divider())
+
+        self._config_status = QLabel("No configuration loaded")
+        self._config_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        pc.addWidget(self._config_status)
+
+        self._thumbnail = _ConfigThumbnail()
+        self._thumbnail.setVisible(False)
+        pc.addWidget(self._thumbnail, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        layout.addWidget(preview_card)
+        layout.addStretch()
+
+        return panel
+
+    def _build_file_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("Card")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.addWidget(make_label("Loaded Feature Files", "SectionLabel"))
+        header.addStretch()
+
+        self._file_count_lbl = QLabel("")
+        self._file_count_lbl.setObjectName("StatusBadge")
+        self._file_count_lbl.setVisible(False)
+        header.addWidget(self._file_count_lbl)
+        layout.addLayout(header)
+
+        hint = QLabel("Click a file to toggle whether it is included in the recalculation.")
+        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; background: transparent")
+        layout.addWidget(hint)
+        layout.addWidget(make_divider())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        self._files_container = QWidget()
+        self._files_layout = QVBoxLayout(self._files_container)
+        self._files_layout.setContentsMargins(0, 0, 0, 0)
+        self._files_layout.setSpacing(6)
+        self._files_layout.addStretch()
+
+        scroll.setWidget(self._files_container)
+        layout.addWidget(scroll, 1)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setFixedHeight(6)
+        self._progress_bar.setVisible(False)
+        layout.addWidget(self._progress_bar)
+
+        self._progress_label = QLabel("")
+        self._progress_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        self._progress_label.setVisible(False)
+        layout.addWidget(self._progress_label)
+
+        return panel
+
+    def _load_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Experiments Folder")
+        if not folder:
+            return
+
+        well_amnts: list[int] = []
+        electrode_amnts: list[int] = []
+        file_paths: list[str] = []
+
+        for root, _, files in os.walk(folder):
+            for file in files:
+                if file.endswith("Features.csv") and "Electrode" not in file:
+                    full_path = os.path.join(root, file)
+                    data = pd.read_csv(full_path)
+                    well_amnts.append(len(data))
+                    file_paths.append(full_path)
+
+                    try:
+                        with open(os.path.join(root, "parameters.json")) as jf:
+                            params = json.load(jf)
+                        electrode_amnts.append(params["electrode amount"])
+                    except Exception:
+                        QMessageBox.critical(
+                            self, "Error",
+                            f"Could not find a complementary 'parameters.json' for '{file}'.\n"
+                            "Please make sure every feature file is accompanied by its original parameters.json."
                         )
+                        return
 
-                        electrode_btn.grid(row=x, column=y, sticky='nesw')
-                        self.electrode_buttons[str(counter)] = {
-                            "button": electrode_btn,
-                            "state": True
-                        }
-                        counter+=1
+        if not well_amnts:
+            QMessageBox.critical(self, "Error", "No feature files found in the selected folder.")
+            return
 
-    def toggle_button_state(self, electrode):
-        """
-        Toggle button state
-        """
+        if np.min(well_amnts) != np.max(well_amnts):
+            QMessageBox.critical(
+                self, "Error",
+                "Not all experiments have the same number of wells.\n"
+                "Please remove the exceptions from the folder."
+            )
+            return
 
-        if self.electrode_buttons[electrode]["state"]:
-            self.electrode_buttons[electrode]["state"] = False
-            self.electrode_buttons[electrode]["button"].configure(fg_color=self.parent.unselected_color, hover_color=self.parent.adjust_color(self.parent.unselected_color, factor=0.6))
-        else:
-            self.electrode_buttons[electrode]["state"] = True
-            self.electrode_buttons[electrode]["button"].configure(fg_color=self.parent.selected_color, hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6))
+        if np.min(electrode_amnts) != np.max(electrode_amnts):
+            QMessageBox.critical(
+                self, "Error",
+                "Not all experiments have the same number of electrodes per well.\n"
+                "Please remove the exceptions from the folder."
+            )
+            return
 
-    def select_all(self):
-        for btn in self.electrode_buttons.values():
-            btn["state"] = True
-            btn["button"].configure(fg_color=self.parent.selected_color, hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6))
+        new_well_amnt      = int(np.min(well_amnts))
+        new_electrode_amnt = int(np.min(electrode_amnts))
 
-    def deselect_all(self): 
-        for btn in self.electrode_buttons.values():
-            btn["state"] = False
-            btn["button"].configure(fg_color=self.parent.unselected_color, hover_color=self.parent.adjust_color(self.parent.unselected_color, factor=0.6))
+        if self._config_selected:
+            layout_unchanged = (
+                new_well_amnt      == self._well_amnt and
+                new_electrode_amnt == self._electrode_amnt
+            )
+            if layout_unchanged:
+                pass
+            else:
+                reply = QMessageBox.warning(
+                    self,
+                    "Configuration Incompatible",
+                    f"The new folder has {new_well_amnt} wells *"
+                    f"{new_electrode_amnt} electrodes, but the current "
+                    f"configuration was made for {self._well_amnt} wells *"
+                    f"{self._electrode_amnt} electrodes.\n\n"
+                    "The configuration will be cleared.\n"
+                    "Do you want to continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+                
+                self._configuration   = None
+                self._config_selected = False
+                self._config_status.setText("No configuration loaded")
+                self._config_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+                self._thumbnail.setVisible(False)
 
-    def save_config(self):
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".npy",
-            filetypes=[("NPY files", "*.npy"), ("All files", "*.*")],
-            title="Save configuration file"
+        self._well_amnt      = new_well_amnt
+        self._electrode_amnt = new_electrode_amnt
+        self._display_files(file_paths)
+
+    def _display_files(self, file_paths: list[str]):
+        for entry in self._file_buttons.values():
+            entry["button"].deleteLater()
+        self._file_buttons.clear()
+
+        for path in file_paths:
+            btn = QPushButton(path)
+            btn.setStyleSheet(_FILE_SELECTED_STYLE)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.setMinimumHeight(34)
+            btn.clicked.connect(partial(self._toggle_file, path))
+            self._files_layout.insertWidget(self._files_layout.count() - 1, btn)
+            self._file_buttons[path] = {"button": btn, "state": True}
+
+        n = len(file_paths)
+        self._file_count_lbl.setText(f"{n} file{'s' if n != 1 else ''}")
+        self._file_count_lbl.setVisible(True)
+
+    def _toggle_file(self, path: str):
+        entry = self._file_buttons[path]
+        entry["state"] = not entry["state"]
+        entry["button"].setStyleSheet(
+            _FILE_SELECTED_STYLE if entry["state"] else _FILE_DESELECTED_STYLE
         )
 
-        if not file_path:
-            return
-        
-        # Load config in array
-        config_list = []
-        for btn in self.electrode_buttons.values(): config_list.append(btn["state"])
-
-        np.save(file_path, np.array(config_list))
-
-        CTkMessagebox(message=f"Labels succesfully saved at {file_path}", icon="check", option_1="Ok", title="Saved configuration")
-
-    def load_config(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("NPY files", "*.npy"), ("All files", "*.*")],
-            title="Save configuration file"
+    def _edit_configuration(self):
+        if not self._file_buttons:
+            QMessageBox.warning(
+                self, "No Folder Loaded",
+                "Please load a folder first. The electrode layout is determined by the selected files."
             )
-
-        if not file_path:
             return
 
-        try:
-            config_list = np.load(file_path)
-        except:
-            CTkMessagebox(title="Error", message='Could not load in config file, please make sure you have selected the correct file.', icon="cancel")
+        dlg = EditConfigurationDialog(
+            wells=self._well_amnt,
+            electrodes=self._electrode_amnt,
+            existing_config=self._configuration,
+            parent=self,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            config = dlg.get_config()
+            if config is not None:
+                self._configuration = config
+                self._config_selected = True
+                n_excluded = int(np.sum(~config))
+                self._config_status.setText(
+                    f"{n_excluded} electrode{'s' if n_excluded != 1 else ''} excluded"
+                )
+                self._config_status.setStyleSheet(
+                    f"color: {WARNING if n_excluded > 0 else SUCCESS}; font-size: 11px;"
+                )
+                self._thumbnail.set_config(config, self._well_amnt, self._electrode_amnt)
+                self._thumbnail.setVisible(True)
+
+    def _recalculate_features_btn(self):
+        if not self._config_selected:
+            QMessageBox.warning(
+                self, "No Configuration",
+                "No configuration selected. Please create one using 'Edit / New Configuration'."
+            )
             return
 
-        if len(config_list) != len(self.electrode_buttons):
-            CTkMessagebox(title="Error", message=f"The amount of electrodes in the selected file ({len(config_list)}) does not match with the amount of electrodes in the currently selected experiments ({len(self.electrode_buttons)}).", icon="cancel", wraplength=400)
+        selected_files = [p for p, e in self._file_buttons.items() if e["state"]]
+        if not selected_files:
+            QMessageBox.warning(self, "No Files Selected", "No files are selected for recalculation.")
             return
 
-        for i, value in enumerate(config_list):
-            if value:
-                self.electrode_buttons[str(i+1)]["state"] = True
-                self.electrode_buttons[str(i+1)]["button"].configure(fg_color=self.parent.selected_color, hover_color=self.parent.adjust_color(self.parent.selected_color, factor=0.6))
-            else:
-                self.electrode_buttons[str(i+1)]["state"] = False
-                self.electrode_buttons[str(i+1)]["button"].configure(fg_color=self.parent.unselected_color, hover_color=self.parent.adjust_color(self.parent.unselected_color, factor=0.6))
+        self._progress_bar.setMaximum(len(selected_files))
+        self._progress_bar.setValue(0)
+        self._progress_bar.setVisible(True)
+        self._progress_label.setText("Recalculating features…")
+        self._progress_label.setVisible(True)
 
-    def apply_config(self):
-        # Take a screenshot of the config to display on the main window
-        widget = self.config_frame
-        widget.update_idletasks()
-        x = widget.winfo_rootx()
-        y = widget.winfo_rooty()
-        w = widget.winfo_width()
-        h = widget.winfo_height()
-        
-        img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
-        ctk_image = ctk.CTkImage(light_image=img, dark_image=img, size=(w*0.2, h*0.2))
-        self.main_window.config_image.configure(image=ctk_image, text="")
+        thread = threading.Thread(
+            target=self._recalculate_features_thread,
+            args=(selected_files,),
+            daemon=True,
+        )
+        thread.start()
 
-        # Save the config
-        config_list = []
-        for btn in self.electrode_buttons.values(): config_list.append(btn["state"])
-        self.main_window.configuration = np.array(config_list)
-        self.main_window.config_selected = True
+    def _recalculate_features_thread(self, selected_files: list[str]):
+        finished: list[str] = []
+        failed: list[str] = []
+        errors: list[Exception] = []
 
-        # Destroy widget
-        self.destroy()
+        for i, file in enumerate(selected_files):
+            filepath = Path(file)
+            try:
+                with open(filepath.parent / "parameters.json") as jf:
+                    params = json.load(jf)
+
+                recalculate_features(
+                    outputfolder=filepath.parent,
+                    well_amnt=self._well_amnt,
+                    electrode_amnt=self._electrode_amnt,
+                    electrodes=self._configuration,
+                    sampling_rate=params["sampling rate"],
+                    measurements=params["measurements"],
+                )
+                finished.append(filepath.stem)
+            except Exception as e:
+                failed.append(filepath.stem)
+                errors.append(e)
+
+            self._progress_bar.setValue(i + 1)
+            self._progress_label.setText(f"Processing {i+1} / {len(selected_files)}…")
+
+        self._recalc_done.emit(finished, failed, errors)
+
+    def _on_recalculation_done(
+        self,
+        finished: list[str],
+        failed: list[str],
+        errors: list[Exception],
+    ):
+        self._progress_bar.setVisible(False)
+        self._progress_label.setVisible(False)
+
+        lines: list[str] = []
+        if finished:
+            lines.append(f"Finished ({len(finished)}):")
+            lines.extend(f"   {f}" for f in finished)
+        else:
+            lines.append("Did not finish any files.")
+
+        if failed:
+            lines.append(f"\nFailed ({len(failed)}):")
+            for f, e in zip(failed, errors):
+                lines.append(f"   {f}: {e}")
+
+        QMessageBox.information(self, "Recalculation Complete", "\n".join(lines))

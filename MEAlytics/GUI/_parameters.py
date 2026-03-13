@@ -1,14 +1,13 @@
 import json
-import os
 import traceback
 
+# PyQt Imports
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QComboBox, QCheckBox, QPushButton, QFrame,
-    QScrollArea, QGroupBox, QFileDialog, QMessageBox, QSizePolicy
+    QScrollArea, QGroupBox, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
-
 
 class ParameterFrame(QWidget):
     def __init__(self, parent):
@@ -33,9 +32,9 @@ class ParameterFrame(QWidget):
         root.addLayout(header_row)
 
         subtitle = QLabel(
-            "These parameters control every stage of the analysis pipeline."
-            "Default values should work well for most recordings."
+            "These parameters control every stage of the analysis pipeline. Default values should work well for most recordings."
         )
+        subtitle.setStyleSheet("background: transparent")
         subtitle.setWordWrap(True)
         subtitle.setObjectName("MetaLabel")
         root.addWidget(subtitle)
@@ -97,14 +96,12 @@ class ParameterFrame(QWidget):
         cancel_btn.setObjectName("DangerBtn")
         cancel_btn.setMinimumHeight(38)
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.clicked.connect(lambda: self.parent.show_frame("workbench"))
+        cancel_btn.clicked.connect(lambda: self.parent.show_frame("start_analysis"))
         bar_layout.addWidget(cancel_btn)
 
         root.addWidget(bar)
 
     def _populate_grid(self):
-        """Build all grouped parameter sections into the grid."""
-
         # Filter
         f_group = self._make_group("Filter Parameters")
         self._add_input(f_group, "Low cutoff (Hz):", "low cutoff", 1, "e.g. 200", "Low-pass cutoff in Hz")
@@ -156,10 +153,7 @@ class ParameterFrame(QWidget):
 
         o_group.layout().addWidget(self._field_label("Synchronicity method:"), 2, 0)
         self.sync_method = QComboBox()
-        self.sync_method.addItems([
-            "ISI-distance", "Adaptive ISI-distance",
-            "SPIKE-distance", "Adaptive SPIKE-distance"
-        ])
+        self.sync_method.addItems(["ISI-distance", "Adaptive ISI-distance", "SPIKE-distance", "Adaptive SPIKE-distance"])
         o_group.layout().addWidget(self.sync_method, 2, 1)
 
         self.remove_inactive = QCheckBox("Remove inactive electrodes")
@@ -241,7 +235,7 @@ class ParameterFrame(QWidget):
 
             # Integers
             for key in ("low cutoff", "high cutoff", "order", "minimal amount of spikes"):
-                p[key] = int(self.inputs[key].text())
+                p[key] = int(float(self.inputs[key].text()))
 
             # Floats
             for key in (
@@ -253,14 +247,14 @@ class ParameterFrame(QWidget):
             ):
                 p[key] = float(self.inputs[key].text())
 
-            # Enums / booleans
+            # Other
             p["thresholding method"]      = self.nw_method.currentText()
             p["spike validation method"]  = self.val_method.currentText()
             p["synchronicity method"]     = self.sync_method.currentText()
             p["remove inactive electrodes"] = self.remove_inactive.isChecked()
             p["use multiprocessing"]      = self.multi_check.isChecked()
 
-            self.parent.show_frame("workbench")
+            self.parent.show_frame("start_analysis")
 
         except Exception as e:
             traceback.print_exc()

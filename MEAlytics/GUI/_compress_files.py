@@ -1,154 +1,351 @@
-# Imports
 import os
-import threading
-from tkinter import *
-from tkinter import filedialog
 import traceback
+import threading
+from pathlib import Path
 
-# External libraries
-import customtkinter as ctk
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
-# Package imports
 from MEAlytics.core._utilities import rechunk_dataset
+from MEAlytics.GUI._theme import (
+    ACCENT,
+    BORDER_COLOR,
+    DANGER,
+    STYLESHEET,
+    SURFACE_1,
+    SURFACE_2,
+    SURFACE_3,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    WARNING,
+    make_divider,
+    make_label,
+)
 
-class compress_files(ctk.CTkFrame):
-    """
-    Allows the user to compress/rechunk multiple files.
-    """
-    def __init__(self, parent):
+
+class CompressWindow(QMainWindow):
+    _progress_updated = pyqtSignal(int, int, str)
+    _file_finished    = pyqtSignal(str, bool)
+    _compression_done = pyqtSignal(list, list)
+
+    def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowTitle("MEAlytics — Rechunk / Compress")
+        self.resize(680, 520)
+        self.setMinimumSize(520, 420)
+        self.setStyleSheet(STYLESHEET)
 
-        self.parent=parent
+        self._selected_file: str = ""
+        self._compression_method: str = "lzf"
+        self._abort_flag: bool = False
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+        self._progress_updated.connect(self._on_progress_updated)
+        self._file_finished.connect(self._on_file_finished)
+        self._compression_done.connect(self._on_compression_done)
 
-        self.select_file_button=ctk.CTkButton(master=self, text="Select a file", command=self.openfiles)
-        self.select_file_button.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='nesw')
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
 
-        self.to_main_frame_button=ctk.CTkButton(master=self, text="Return to main menu", command=lambda: parent.show_frame(self.parent.home_frame))
-        self.to_main_frame_button.grid(row=6, column=0, columnspan=2, padx=10, pady=10, sticky='nesw')
+        root.addWidget(self._build_settings_panel(), 0)
+        root.addWidget(self._build_progress_panel(), 1)
 
-        gzip_level_text=ctk.CTkLabel(master=self, text="GZIP compression level: 1")
-        gzip_level_text.grid(row=2, column=0, padx=10, pady=10, sticky='nesw', columnspan=2)
+    def _build_settings_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setFixedWidth(260)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
-        def show_value(value):
-            gzip_level_text.configure(text=f"GZIP compression level: {int(value)}")
+        # File selection
+        file_card = QFrame()
+        file_card.setObjectName("Card")
+        fc = QVBoxLayout(file_card)
+        fc.setContentsMargins(16, 14, 16, 14)
+        fc.setSpacing(8)
+        fc.addWidget(make_label("Input File", "SectionLabel"))
+        fc.addWidget(make_divider())
 
-        self.slider_value = ctk.IntVar(value=1)
-        self.gzip_level_slider=ctk.CTkSlider(master=self, from_=1, to=9, orientation='horizontal', variable=self.slider_value, width=200, number_of_steps=8, command=show_value)
-        self.gzip_level_slider.grid(row=3, column=0, padx=10, pady=(0, 10), columnspan=2, sticky='nesw')
-        self.gzip_level_slider.configure(state='disabled')
+        self._file_btn = QPushButton("Select a file")
+        self._file_btn.setObjectName("PrimaryBtn")
+        self._file_btn.setMinimumHeight(38)
+        self._file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._file_btn.clicked.connect(self._open_file)
+        fc.addWidget(self._file_btn)
 
-        def lzf_selected():
-            self.gzip_var.set(False)
-            self.gzip_level_slider.configure(state='disabled')
-            self.compression_method='lzf'
+        self._compress_all_cb = QCheckBox("Compress all .h5 files in same folder")
+        self._compress_all_cb.setStyleSheet("background: transparent")
+        self._compress_all_cb.setChecked(False)
+        fc.addWidget(self._compress_all_cb)
 
-        def gzip_selected():
-            self.lzf_var.set(False)
-            self.gzip_level_slider.configure(state='normal')
-            self.compression_method='gzip'
+        layout.addWidget(file_card)
 
-        self.lzf_var=ctk.IntVar()
-        lzf_button=ctk.CTkCheckBox(self, text='LZF', onvalue=True, offvalue=False, variable=self.lzf_var, command=lzf_selected)
-        lzf_button.grid(row=1, column=0, padx=10, pady=10, sticky='nesw')
+        # Compression method
+        method_card = QFrame()
+        method_card.setObjectName("Card")
+        mc = QVBoxLayout(method_card)
+        mc.setContentsMargins(16, 14, 16, 14)
+        mc.setSpacing(10)
+        mc.addWidget(make_label("Compression Method", "SectionLabel"))
+        mc.addWidget(make_divider())
 
-        self.gzip_var=ctk.IntVar()
-        gzip_button=ctk.CTkCheckBox(self, text='GZIP', onvalue=True, offvalue=False, variable=self.gzip_var, command=gzip_selected)
-        gzip_button.grid(row=1, column=1, padx=10, pady=10, sticky='nesw')
+        self._btn_group = QButtonGroup(self)
 
-        self.compress_all=ctk.BooleanVar()
-        compress_all_button=ctk.CTkCheckBox(self, text='Compress all files in folder', onvalue=True, offvalue=False, variable=self.compress_all)
-        compress_all_button.grid(row=4, column=0, padx=10, pady=10, sticky='nesw', columnspan=2)
-        self.compress_all.set(False)
+        self._lzf_radio = QRadioButton("LZF  (fast, moderate ratio)")
+        self._lzf_radio.setStyleSheet("background: transparent")
+        self._lzf_radio.setChecked(True)
+        self._btn_group.addButton(self._lzf_radio)
+        mc.addWidget(self._lzf_radio)
 
-        # Default values
-        self.lzf_var.set(True)
-        self.selected_file=''
-        self.compression_method='lzf'
-        self.compression_level=1
+        self._gzip_radio = QRadioButton("GZIP  (slower, better ratio)")
+        self._gzip_radio.setStyleSheet("background: transparent")
+        self._btn_group.addButton(self._gzip_radio)
+        mc.addWidget(self._gzip_radio)
 
-        self.compress_files_button=ctk.CTkButton(master=self, text="Start compression", command=lambda: threading.Thread(target=self.compress_files_function).start())
-        self.compress_files_button.grid(row=5, column=0, columnspan=2, padx=10, pady=10, sticky='nesw')
+        self._btn_group.buttonClicked.connect(self._on_method_changed)
 
-        self.abort_flag=False
+        mc.addWidget(make_divider())
 
-    def openfiles(self):
-        selectedfile = filedialog.askopenfilename(filetypes=[("MEA data", "*.h5")])
-        if len(selectedfile)!=0:
-            self.selected_file=selectedfile
-            self.select_file_button.configure(text=selectedfile)
+        gzip_row = QHBoxLayout()
+        gzip_level_lbl = QLabel("GZIP level:")
+        gzip_level_lbl.setStyleSheet("background: transparent")
+        gzip_row.addWidget(gzip_level_lbl)
+        self._gzip_level_lbl = QLabel("1")
+        self._gzip_level_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent")
+        gzip_row.addWidget(self._gzip_level_lbl)
+        gzip_row.addStretch()
+        mc.addLayout(gzip_row)
 
-    def compress_files_function(self):
-        if self.selected_file=='':
+        self._gzip_slider = QSlider(Qt.Orientation.Horizontal)
+        self._gzip_slider.setMinimum(1)
+        self._gzip_slider.setMaximum(9)
+        self._gzip_slider.setValue(1)
+        self._gzip_slider.setTickInterval(1)
+        self._gzip_slider.setEnabled(False)
+        self._gzip_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                background: {SURFACE_3};
+                height: 4px;
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {ACCENT};
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }}
+            QSlider::handle:horizontal:disabled {{
+                background: {BORDER_COLOR};
+            }}d
+            QSlider::sub-page:horizontal {{
+                background: {ACCENT};
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:horizontal:disabled {{
+                background: {BORDER_COLOR};
+            }}
+        """)
+        self._gzip_slider.valueChanged.connect(
+            lambda v: self._gzip_level_lbl.setText(str(v))
+        )
+        mc.addWidget(self._gzip_slider)
+
+        layout.addWidget(method_card)
+
+        # Start / abort buttons
+        self._start_btn = QPushButton("▶  Start Compression")
+        self._start_btn.setObjectName("PrimaryBtn")
+        self._start_btn.setMinimumHeight(42)
+        self._start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._start_btn.clicked.connect(self._start_compression)
+        layout.addWidget(self._start_btn)
+
+        self._abort_btn = QPushButton("Cancel")
+        self._abort_btn.setObjectName("DangerBtn")
+        self._abort_btn.setMinimumHeight(38)
+        self._abort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._abort_btn.setVisible(False)
+        self._abort_btn.clicked.connect(self._abort_compression)
+        layout.addWidget(self._abort_btn)
+
+        layout.addStretch()
+        return panel
+    def _build_progress_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("Card")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        layout.addWidget(make_label("Progress", "SectionLabel"))
+        layout.addWidget(make_divider())
+
+        self._status_lbl = QLabel("No compression running.")
+        self._status_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent")
+        layout.addWidget(self._status_lbl)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setFixedHeight(6)
+        self._progress_bar.setValue(0)
+        layout.addWidget(self._progress_bar)
+
+        layout.addWidget(make_divider())
+        layout.addWidget(make_label("Results", "SectionLabel"))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        self._log_container = QWidget()
+        self._log_layout = QVBoxLayout(self._log_container)
+        self._log_layout.setContentsMargins(0, 0, 0, 0)
+        self._log_layout.setSpacing(4)
+        self._log_layout.addStretch()
+
+        scroll.setWidget(self._log_container)
+        layout.addWidget(scroll, 1)
+
+        return panel
+
+    def _open_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select HDF5 File", "", "MEA data (*.h5);;All Files (*)"
+        )
+        if path:
+            self._selected_file = path
+            self._file_btn.setText(Path(path).name)
+            self._file_btn.setToolTip(path)
+
+    def _on_method_changed(self):
+        gzip = self._gzip_radio.isChecked()
+        self._gzip_slider.setEnabled(gzip)
+        self._compression_method = "gzip" if gzip else "lzf"
+
+    def _abort_compression(self):
+        self._abort_flag = True
+        self._abort_btn.setText("Aborting…")
+        self._abort_btn.setEnabled(False)
+        self._status_lbl.setText("Aborting after current file…")
+        self._status_lbl.setStyleSheet(f"color: {WARNING}; font-size: 12px;")
+
+    def _start_compression(self):
+        if not self._selected_file:
+            self._status_lbl.setText("Please select a file first.")
+            self._status_lbl.setStyleSheet(f"color: {WARNING}; font-size: 12px;")
             return
-        if self.compress_all.get():
-            folder=os.path.dirname(self.selected_file)
-            mea_files=[os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".h5")]
+
+        if self._compress_all_cb.isChecked():
+            folder = os.path.dirname(self._selected_file)
+            files = [
+                os.path.join(folder, f)
+                for f in os.listdir(folder)
+                if f.endswith(".h5")
+            ]
         else:
-            mea_files=[self.selected_file]
+            files = [self._selected_file]
 
-        popup=ctk.CTkToplevel(self)
-        popup.title('File Compression')
-        try:
-            popup.after(250, lambda: popup.iconbitmap(os.path.join(self.parent.icon_path)))
-        except Exception as error:
-            print(error)
-        
-        progressinfo=ctk.CTkLabel(master=popup, text=f'Compressing {len(mea_files)} file{"s" if len(mea_files) != 1 else ""}')
-        progressinfo.grid(row=0, column=0, pady=10, padx=20)
-        progressbarlength=300
-        progressbar=ctk.CTkProgressBar(master=popup, orientation='horizontal', width=progressbarlength, mode='determinate', progress_color="#239b56")
-        progressbar.grid(row=1, column=0, pady=10, padx=20)
-        progressbar.set(0)
-        info=ctk.CTkLabel(master=popup, text='')
-        info.grid(row=2, column=0, pady=10, padx=20)
-        finishedfiles=ctk.CTkLabel(master=popup, text='')
-        finishedfiles.grid(row=3, column=0, pady=10, padx=20)
+        self._abort_flag = False
+        self._progress_bar.setMaximum(len(files))
+        self._progress_bar.setValue(0)
+        self._status_lbl.setText(
+            f"Compressing {len(files)} file{'s' if len(files) != 1 else ''}…"
+        )
+        self._status_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        self._clear_log()
+        self._start_btn.setEnabled(False)
+        self._abort_btn.setVisible(True)
+        self._abort_btn.setEnabled(True)
+        self._abort_btn.setText("Cancel")
 
-        # Aborting compression
-        def abort_compression():
-            self.abort_flag=True
-            print("Aborting compression for further files...")
-            abort_button.configure(text="Aborting compression for further files...")
-            abort_button.configure(state='disabled')
+        threading.Thread(
+            target=self._compress_thread,
+            args=(files, self._compression_method, self._gzip_slider.value()),
+            daemon=True,
+        ).start()
 
-        abort_button=ctk.CTkButton(master=popup, text="Abort compression", command=abort_compression)
-        abort_button.grid(row=4, column=0, columnspan=2, padx=10, pady=10, sticky='nesw')
-        popup.protocol("WM_DELETE_WINDOW", abort_compression)
+    def _compress_thread(self, files: list[str], method: str, level: int):
+        success_files: list[str] = []
+        failed_files:  list[str] = []
 
-        succesfiles=[]
-        failedfiles=[]
-    
+        for i, file in enumerate(files):
+            if self._abort_flag:
+                self._abort_flag = False
+                break
 
-        for file in range(len(mea_files)):
-            if self.abort_flag:
-                self.abort_flag=False
-                popup.destroy()
-                return
-            info.configure(text=f"Compressing file {file+1} out of {len(mea_files)}")
+            self._progress_updated.emit(i, len(files), Path(file).name)
+
             try:
-                print(f"Compressing {mea_files[file]}")
-                rechunk_dataset(fileadress=mea_files[file], compression_method=self.compression_method, compression_level=self.compression_level, always_compress_files=True)
-                succesfiles.append(mea_files[file])
-            except Exception as error:
-                print(f"Could not compress {mea_files[file]}")
+                rechunk_dataset(
+                    fileadress=file,
+                    compression_method=method,
+                    compression_level=level,
+                    always_compress_files=True,
+                )
+                success_files.append(file)
+                self._file_finished.emit(file, True)
+            except Exception:
                 traceback.print_exc()
-                failedfiles.append(mea_files[file])
-            currentprogress=((file+1)/len(mea_files))
-            progressbar.set(currentprogress)
-            finishedfiles_text=""
-            if len(succesfiles) != 0:
-                finishedfiles_text+="Compressed files:\n"
-                for i in range(len(succesfiles)):
-                    finishedfiles_text+=f"{succesfiles[i]}\n"
-            if len(failedfiles) != 0:
-                finishedfiles_text+="Failed files:\n"
-                for i in range(len(failedfiles)):
-                    finishedfiles_text+=f"{failedfiles[i]}\n"
-            finishedfiles.configure(text=finishedfiles_text)
-        
-        abort_button.configure(state='disabled')
-        info.configure(text="Finished compression")
-        popup.protocol("WM_DELETE_WINDOW", popup.destroy)
+                failed_files.append(file)
+                self._file_finished.emit(file, False)
+
+        self._compression_done.emit(success_files, failed_files)
+
+    def _on_progress_updated(self, current: int, total: int, filename: str):
+        self._progress_bar.setValue(current)
+        self._status_lbl.setText(f"[{current + 1}/{total}]  {filename}")
+
+    def _on_file_finished(self, filepath: str, success: bool):
+        name = Path(filepath).name
+        lbl = QLabel(f"{'✔' if success else '✘'}  {name}")
+        lbl.setStyleSheet(
+            f"color: {SUCCESS if success else DANGER}; font-size: 12px;"
+        )
+        lbl.setToolTip(filepath)
+        lbl.setWordWrap(True)
+        self._log_layout.insertWidget(self._log_layout.count() - 1, lbl)
+
+    def _on_compression_done(self, success_files: list[str], failed_files: list[str]):
+        self._progress_bar.setValue(self._progress_bar.maximum())
+        n_ok   = len(success_files)
+        n_fail = len(failed_files)
+
+        if n_fail == 0:
+            msg   = f"Done - {n_ok} file{'s' if n_ok != 1 else ''} compressed successfully."
+            color = SUCCESS
+        else:
+            msg   = f"Done - {n_ok} succeeded, {n_fail} failed."
+            color = WARNING
+
+        self._status_lbl.setText(msg)
+        self._status_lbl.setStyleSheet(f"color: {color}; font-size: 12px;")
+
+        self._start_btn.setEnabled(True)
+        self._abort_btn.setVisible(False)
+
+    def _clear_log(self):
+        while self._log_layout.count() > 1:
+            item = self._log_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
