@@ -31,7 +31,7 @@ from MEAlytics.core._features import (
 from MEAlytics.core._network_burst_detection import network_burst_detection
 from MEAlytics.core._spike_validation import spike_validation
 from MEAlytics.core._threshold import fast_threshold
-from MEAlytics.core._utilities import rechunk_dataset
+from MEAlytics.core.file_io._read_mea_data import get_mea_file_reader
 
 
 def get_default_parameters():
@@ -96,11 +96,9 @@ class AnalysisWorker(QObject):
     log_message = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, filepath, sampling_rate, electrode_amnt, parameters):
+    def __init__(self, filepath, parameters):
         super().__init__()
         self.filepath = filepath
-        self.sampling_rate = sampling_rate
-        self.electrode_amnt = electrode_amnt
         self.parameters = parameters
         self._stop_event = threading.Event()
         self.output_path = None
@@ -115,8 +113,6 @@ class AnalysisWorker(QObject):
         try:
             self.output_path = analyse_wells(
                 fileadress=self.filepath,
-                sampling_rate=self.sampling_rate,
-                electrode_amnt=self.electrode_amnt,
                 parameters=self.parameters,
                 progress_signal=self.progress_updated,
                 stop_event=self._stop_event,
@@ -130,7 +126,7 @@ class AnalysisWorker(QObject):
             self.finished.emit(success, self.output_path)
 
 
-def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
+def _electrode_subprocess(memory_id, shape, _type, electrode, well, parameters):
     """
     Function that can be called to analyse a single electrode as a subprocess when using multiprocessing.
 
@@ -144,6 +140,8 @@ def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
         Type of the shared array.
     electrode : int
         The electrode to be analysed.
+    well : int
+        Well number.
     parameters : dict
         Dictionary containing global paramaters. The function will extract the values needed.
 
@@ -154,7 +152,7 @@ def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
     funcdata = np.ndarray(shape, _type, buffer=existing_shm.buf)
 
     # From all the data, select the electrode
-    data = funcdata[electrode % parameters["electrode amount"]]
+    data = funcdata[electrode - 1]
 
     # Filter the data
     data = butter_bandpass_filter(data, parameters)
@@ -171,10 +169,10 @@ def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
         raise ValueError(
             f'"{parameters["spike validation method"]}" is not a valid spike validation method'
         )
-    spike_validation(data, electrode, threshold_value, parameters)
+    spike_validation(data, electrode, well, threshold_value, parameters)
 
     # Detect the bursts
-    burst_detection(data, electrode, parameters)
+    burst_detection(data, electrode, well, parameters)
 
     data = None
     existing_shm.close()
@@ -183,8 +181,6 @@ def _electrode_subprocess(memory_id, shape, _type, electrode, parameters):
 
 def analyse_wells(
     fileadress,
-    sampling_rate,
-    electrode_amnt,
     parameters={},
     progress_signal=None,
     stop_event=None,
@@ -196,10 +192,6 @@ def analyse_wells(
     ----------
     fileadress : str
         The file location of the file that is to be analyzed.
-    sampling_rate : int
-        The sampling rate of the MEA experiment.
-    electrode_amnt : int
-        The amount of electrodes per well of the MEA experiment
     parameters : dict, optional
         Parameters that can alter the analysis, if left empty, will use default parameters.
 
@@ -222,12 +214,8 @@ def analyse_wells(
     >>> if __name__ == '__main__':
     ...     parameters = get_default_parameters()
     ...     fileadress = 'H:/MEA_data/mea_experiment.h5'
-    ...     sampling_rate = 20000
-    ...     electrode_amount = 12
     ...     analyse_wells(
     ...         fileadress=fileadress,
-    ...         sampling_rate=sampling_rate,
-    ...         electrode_amnt=electrode_amount,
     ...         parameters=parameters
     ...     )
 
@@ -262,39 +250,8 @@ def analyse_wells(
     # Call the freeze_support function to make sure multiprocessing still works properly if the algorithm is frozen
     multiprocessing.freeze_support()
 
-    # Open the raw data
-    print("Opening the data")
-    rechunk_data = False
-    with h5py.File(fileadress, "r") as h5file:
-        dataset_chunks = h5file[
-            "Data/Recording_0/AnalogStream/Stream_0/ChannelData"
-        ].chunks
-
-        datashape = h5file["Data/Recording_0/AnalogStream/Stream_0/ChannelData"].shape
-        # Check if the electrode_amnt parameter is set properly
-        if datashape[0] % electrode_amnt != 0:
-            raise ValueError(
-                f"The total amount of electrodes ({datashape[0]}) is not divisible by the number of electrodes per well ({electrode_amnt})"
-            )
-
-        # Check if dataset_chunks is not None
-        if dataset_chunks:
-            if dataset_chunks[0] != 1:
-                rechunk_data = True
-            else:
-                print("Data is already correctly chunked")
-                rechunk_data = False
-        else:
-            rechunk_data = True
-
-        if rechunk_data:
-            print(
-                "Data is not correctly chunked yet.\nRechunking the data will allow the tool to quickly analyze large files on limited amount of RAM"
-            )
-            _emit_progress(0, 1)
-            fileadress = rechunk_dataset(
-                fileadress=fileadress, compression_method="lzf"
-            )
+    # Load the data
+    MEA_file = get_mea_file_reader(fileadress)
 
     # Create figures folder for output
     os.makedirs(f"{outputpath}/figures")
@@ -311,17 +268,17 @@ def analyse_wells(
         parameters = get_default_parameters()
 
     # Create a list of all wells
-    wells = list(range(1, int(datashape[0] / electrode_amnt) + 1))
+    wells = list(range(1, MEA_file.num_wells + 1))
 
     # Save the parameters that have been given in a JSON file
     new_values = {
         "output path": outputpath,
         "output hdf file": output_hdf_file,
         "file adress": fileadress,
-        "sampling rate": sampling_rate,
-        "electrode amount": electrode_amnt,
+        "sampling rate": MEA_file.sampling_rate,
+        "electrode amount": MEA_file.num_electrodes,
         "well amount": wells,
-        "measurements": datashape[1],
+        "measurements": MEA_file.shape[1],
         "library version": lib_version,
     }
 
@@ -337,21 +294,18 @@ def analyse_wells(
     if parameters["use multiprocessing"]:
         # Save the data in shared memory
         print("Loading data into shared memory")
+        num_elements = MEA_file.num_electrodes * MEA_file.shape[1]
+        exact_size_bytes = num_elements * np.dtype(MEA_file.type).itemsize
         # Create space on the RAM
-        with h5py.File(fileadress, "r") as hdf_file:
-            # Access the dataset
-            dataset = hdf_file["Data"]["Recording_0"]["AnalogStream"]["Stream_0"][
-                "ChannelData"
-            ]
-            np_size = dataset[:electrode_amnt].nbytes
-            shape = dataset[:electrode_amnt].shape
-            _type = dataset.dtype
-            measurements = dataset.shape[1]
-        sharedmemory = SharedMemory(create=True, size=np_size)
+        sharedmemory = SharedMemory(create=True, size=int(exact_size_bytes))
         # Communicate file size with GUI
-        _emit_progress(0, datashape[0])
+        _emit_progress(0, MEA_file.shape[0])
         # Create a np array in the shared memory
-        data_shared = np.ndarray(shape, dtype=_type, buffer=sharedmemory.buf)
+        data_shared = np.ndarray(
+            (MEA_file.num_electrodes, MEA_file.shape[1]),
+            dtype=MEA_file.type,
+            buffer=sharedmemory.buf,
+        )
         # Get the memory ID
         memory_id = sharedmemory.name
         # Clear up memory
@@ -359,28 +313,29 @@ def analyse_wells(
 
         # Start up a process for every single electrode
         print("Initializing processes")
-        with multiprocessing.Pool(processes=electrode_amnt) as pool:
+        with multiprocessing.Pool(processes=MEA_file.num_electrodes) as pool:
             # Iterate over all wells
             for well in wells:
                 start = time.time()
                 # Calculate which electrodes belong to this well
-                electrodes = np.arange(
-                    (well - 1) * electrode_amnt, well * electrode_amnt
-                )
-                print(f"Analyzing well: {well}, consisting of electrodes: {electrodes}")
+                electrodes = np.arange(1, MEA_file.num_electrodes + 1)
+                print(f"Analyzing well: {well}")
 
                 readtime = time.time()
                 # Read in the data of the well and put it into the shared memory block
-                with h5py.File(fileadress, "r") as hdf_file:
-                    dataset = hdf_file["Data"]["Recording_0"]["AnalogStream"][
-                        "Stream_0"
-                    ]["ChannelData"]
-                    data_shared[:] = dataset[electrodes]
+                data_shared[:] = MEA_file.get_voltage_trace(well)
                 print(f"Readtime: {time.time() - readtime}")
 
                 # Divide the tasks to the processes
                 args = [
-                    (memory_id, shape, _type, electrode, parameters)
+                    (
+                        memory_id,
+                        (MEA_file.num_electrodes, MEA_file.shape[1]),
+                        MEA_file.type,
+                        electrode,
+                        well,
+                        parameters,
+                    )
                     for electrode in electrodes
                 ]
                 pool.starmap(_electrode_subprocess, args)
@@ -432,7 +387,7 @@ def analyse_wells(
                     print("Analysis aborted by user")
                     return
 
-                _emit_progress(well * electrode_amnt, datashape[0])
+                _emit_progress(well * MEA_file.num_electrodes, MEA_file.shape[0])
 
         # Clean up the shared memory
         sharedmemory.close()
@@ -442,18 +397,13 @@ def analyse_wells(
     else:
         for well in wells:
             start = time.time()
-            # Calculate which electrodes belong to this well
-            electrodes = np.arange((well - 1) * electrode_amnt, well * electrode_amnt)
-            print(f"Analyzing well: {well}, consisting of electrodes: {electrodes}")
+            print(f"Analyzing well: {well}")
+
+            electrodes = np.arange(1, MEA_file.num_electrodes + 1)
 
             # Loop through all the electrodes
             for electrode in electrodes:
-                with h5py.File(fileadress, "r") as hdf_file:
-                    dataset = hdf_file["Data"]["Recording_0"]["AnalogStream"][
-                        "Stream_0"
-                    ]["ChannelData"]
-                    # Read in the data
-                    data = dataset[electrode]
+                data = MEA_file.get_voltage_trace(well, electrode)
                 # Filter the data
                 data = butter_bandpass_filter(data, parameters)
 
@@ -469,10 +419,10 @@ def analyse_wells(
                     raise ValueError(
                         f'"{parameters["spike validation method"]}" is not a valid spike validation method'
                     )
-                spike_validation(data, electrode, threshold_value, parameters)
+                spike_validation(data, electrode, well, threshold_value, parameters)
 
                 # Detect the bursts
-                burst_detection(data, electrode, parameters)
+                burst_detection(data, electrode, well, parameters)
 
                 # Check if the user wants to exit the analysis
                 if _should_stop():
@@ -482,10 +432,10 @@ def analyse_wells(
                     print("Analysis aborted by user")
                     return
 
-                _emit_progress(electrode + 1, datashape[0])
+                _emit_progress(
+                    (well - 1) * MEA_file.num_electrodes + electrode, MEA_file.shape[0]
+                )
                 print(f"Processed electrode: {electrode}")
-
-            measurements = datashape[1]
 
             # Detect network bursts
             network_burst_detection([well], parameters, save_figures=True)

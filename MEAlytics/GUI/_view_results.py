@@ -3,7 +3,6 @@ import webbrowser
 from functools import partial
 from pathlib import Path
 
-import h5py
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
@@ -21,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from MEAlytics.core.file_io._read_mea_data import get_mea_file_reader
 from MEAlytics.GUI._heatmap import HeatmapFrame
 from MEAlytics.GUI._helpers import _electrode_grid, _well_grid
 from MEAlytics.GUI._single_electrode_view import SingleElectrodeView
@@ -276,7 +276,7 @@ class ViewResultsView(QWidget):
         raw_browse.setObjectName("SecondaryBtn")
         raw_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         raw_browse.clicked.connect(self._browse_rawfile)
-        raw_label = QLabel("Raw HDF5 file:")
+        raw_label = QLabel("Raw HDF5 or .raw file:")
         raw_label.setStyleSheet("background: transparent")
         raw_row.addWidget(raw_label)
         raw_row.addWidget(self._rawfile_label, 1)
@@ -304,7 +304,10 @@ class ViewResultsView(QWidget):
 
     def _browse_rawfile(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Raw HDF5 File", "", "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+            self,
+            "Select Files",
+            "",
+            "Data Files (*.h5 *.hdf5 *.raw);;HDF5 Files (*.h5 *.hdf5);;Raw Files (*.raw);;All Files (*)",
         )
         if path:
             self._rawfile = path
@@ -329,15 +332,13 @@ class ViewResultsView(QWidget):
             with open(params_path) as f:
                 self._parameters = json.load(f)
 
-            with h5py.File(rawfile, "r") as hdf:
-                self.datashape = hdf[
-                    "Data/Recording_0/AnalogStream/Stream_0/ChannelData"
-                ].shape
+            MEA_file = get_mea_file_reader(rawfile)
 
             self._folder = folder
             self._rawfile = rawfile
-            self._n_electrodes = self._parameters["electrode amount"]
-            self._n_wells = int(self.datashape[0] / self._n_electrodes)
+            self._n_electrodes = MEA_file.num_electrodes
+            self._n_wells = MEA_file.num_wells
+            self.datashape = MEA_file.shape
 
             self._registry.close_all()
 

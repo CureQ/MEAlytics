@@ -1,4 +1,3 @@
-# External packages
 import copy
 
 import h5py
@@ -16,6 +15,7 @@ from MEAlytics.GUI._theme import (
 def spike_validation(
     data,
     electrode,
+    well,
     threshold,
     parameters,
     plot_electrodes=False,
@@ -30,7 +30,9 @@ def spike_validation(
     data : list, np.ndarray
         Raw single electrode data.
     electrode : int
-        Electrode number the raw data orignates from.
+        Electrode number.
+    well : int
+        Well number.
     threshold : float
         Threshold values used for the spike detection.
     parameters : dict
@@ -170,10 +172,6 @@ def spike_validation(
                         > (data[j] + drop_amount)
                     ):
                         spikes[j] = False
-
-    # Calculate MEA electrode
-    electrode = i % parameters["electrode amount"] + 1
-    well = round(i / parameters["electrode amount"] + 0.505)
 
     """Visualization of the spike detection/validation process - used by the GUI"""
     if plot_electrodes:

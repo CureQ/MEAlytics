@@ -2,7 +2,6 @@ import copy
 import json
 import os
 
-import h5py
 from matplotlib.backends.backend_qt import NavigationToolbar2QT
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtGui import QColor, QPalette
@@ -26,6 +25,7 @@ from MEAlytics.core._bandpass import butter_bandpass_filter
 from MEAlytics.core._burst_detection import burst_detection
 from MEAlytics.core._spike_validation import spike_validation
 from MEAlytics.core._threshold import fast_threshold
+from MEAlytics.core.file_io._read_mea_data import get_mea_file_reader
 from MEAlytics.GUI._helpers import _get_float, _get_int, _set_entry, _show_error
 from MEAlytics.GUI._theme import (
     DARK_BG,
@@ -73,9 +73,7 @@ def _make_group(title: str, rows: list[tuple]) -> tuple[QGroupBox, dict]:
 
 
 class SingleElectrodeView(QDialog):
-    def __init__(
-        self, folder: str, rawfile: str, well: int, electrode: int
-    ):
+    def __init__(self, folder: str, rawfile: str, well: int, electrode: int):
         super().__init__()
         self.setWindowTitle(f"Well: {well} - Electrode: {electrode}")
         self.resize(1280, 860)
@@ -84,11 +82,12 @@ class SingleElectrodeView(QDialog):
         with open(os.path.join(folder, "parameters.json")) as f:
             self.parameters = json.load(f)
         self.parameters["output hdf file"] = os.path.join(folder, "output_values.h5")
-        self.electrode_nr = (
-            (well - 1) * self.parameters["electrode amount"] + electrode - 1
-        )
+        self.electrode = electrode
+        self.well = well
         self.rawfile = rawfile
         self.folder = folder
+
+        self.MEA_file = get_mea_file_reader(self.rawfile)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(12, 12, 12, 12)
@@ -369,16 +368,13 @@ class SingleElectrodeView(QDialog):
             )
 
     def _plot_single_electrode(self, parameters: dict) -> None:
-        with h5py.File(self.rawfile, "r") as hf:
-            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][
-                self.electrode_nr
-            ]
-
+        raw_data = self.MEA_file.get_voltage_trace(self.well, self.electrode)
         electrode_data = butter_bandpass_filter(raw_data, parameters)
         threshold = fast_threshold(electrode_data, parameters)
         fig = spike_validation(
             data=electrode_data,
-            electrode=self.electrode_nr,
+            electrode=self.electrode,
+            well=self.well,
             threshold=threshold,
             parameters=parameters,
             plot_electrodes=True,
@@ -427,15 +423,12 @@ class SingleElectrodeView(QDialog):
             )
 
     def _plot_burst_detection(self, parameters: dict) -> None:
-        with h5py.File(self.rawfile, "r") as hf:
-            raw_data = hf["Data/Recording_0/AnalogStream/Stream_0/ChannelData"][
-                self.electrode_nr
-            ]
-
+        raw_data = self.MEA_file.get_voltage_trace(self.well, self.electrode)
         electrode_data = butter_bandpass_filter(raw_data, parameters)
         KDE_fig, burst_fig = burst_detection(
             data=electrode_data,
-            electrode=self.electrode_nr,
+            electrode=self.electrode,
+            well=self.well,
             parameters=parameters,
             plot_electrodes=True,
             savedata=False,

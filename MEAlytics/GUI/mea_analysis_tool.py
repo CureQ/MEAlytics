@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QProgressBar,
     QPushButton,
@@ -66,7 +65,7 @@ class DropZone(QFrame):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(8)
 
-        hint = QLabel("Drop HDF5 files here  ·  or")
+        hint = QLabel("Drop HDF5 or raw files here  ·  or")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet(
             f"color: {TEXT_MUTED}; background: transparent; border: none; font-size: 13px;"
@@ -82,7 +81,10 @@ class DropZone(QFrame):
 
     def browse(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select HDF5 Files", "", "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+            self,
+            "Select Files",
+            "",
+            "Data Files (*.h5 *.hdf5 *.raw);;HDF5 Files (*.h5 *.hdf5);;Raw Files (*.raw);;All Files (*)",
         )
         if paths:
             self.files_dropped.emit(paths)
@@ -95,7 +97,7 @@ class DropZone(QFrame):
         paths = [
             u.toLocalFile()
             for u in event.mimeData().urls()
-            if u.toLocalFile().endswith((".h5", ".hdf5"))
+            if u.toLocalFile().endswith((".h5", ".hdf5", ".raw"))
         ]
         if paths:
             self.files_dropped.emit(paths)
@@ -248,49 +250,6 @@ class StartAnalysisView(QWidget):
         header_row.addWidget(self.start_btn)
         content_layout.addLayout(header_row)
 
-        # Required parameters card
-        params_card = QFrame()
-        params_card.setObjectName("Card")
-        params_card_layout = QVBoxLayout(params_card)
-        params_card_layout.setContentsMargins(20, 16, 20, 16)
-        params_card_layout.setSpacing(12)
-
-        rp_header = QHBoxLayout()
-        rp_title = make_label("Required Parameters", "SectionLabel")
-        rp_title.setStyleSheet("background: transparent")
-        rp_header.addWidget(rp_title)
-        rp_header.addStretch()
-        params_card_layout.addLayout(rp_header)
-
-        fields_row = QHBoxLayout()
-        fields_row.setSpacing(24)
-
-        # Electrodes per well
-        e_col = QVBoxLayout()
-        e_col.setSpacing(4)
-        e_col.addWidget(make_label("Electrodes per Well", "MetaLabel"))
-        self.electrodes_input = QLineEdit()
-        self.electrodes_input.setPlaceholderText("e.g.  12")
-        self.electrodes_input.setFixedWidth(140)
-        self.electrodes_input.textChanged.connect(self._check_critical_params)
-        e_col.addWidget(self.electrodes_input)
-        fields_row.addLayout(e_col)
-
-        # Measuring frequency
-        f_col = QVBoxLayout()
-        f_col.setSpacing(4)
-        f_col.addWidget(make_label("Measuring Frequency (Hz)", "MetaLabel"))
-        self.frequency_input = QLineEdit()
-        self.frequency_input.setPlaceholderText("e.g.  20000")
-        self.frequency_input.setFixedWidth(160)
-        self.frequency_input.textChanged.connect(self._check_critical_params)
-        f_col.addWidget(self.frequency_input)
-        fields_row.addLayout(f_col)
-
-        fields_row.addStretch()
-        params_card_layout.addLayout(fields_row)
-        content_layout.addWidget(params_card)
-
         # Drop zone
         self.drop_zone = DropZone()
         self.drop_zone.files_dropped.connect(self.add_files)
@@ -312,13 +271,6 @@ class StartAnalysisView(QWidget):
 
         root.addWidget(content_widget, 1)
         self._init_queue()
-        self._check_critical_params()
-
-    def _check_critical_params(self):
-        e = self.electrodes_input.text().strip()
-        f = self.frequency_input.text().strip()
-        ok = e.isdigit() and f.isdigit()
-        self.start_btn.setEnabled(ok and len(self.job_cards) > 0)
 
     def _init_queue(self):
         self._queue: list[FileJobCard] = []
@@ -337,7 +289,6 @@ class StartAnalysisView(QWidget):
                 self.jobs_layout.insertWidget(self.jobs_layout.count() - 1, card)
                 self.job_cards.append(card)
                 self._queue.append(card)
-        self._check_critical_params()
 
     def remove_card(self, card: FileJobCard):
         """Remove a queued or finished card"""
@@ -349,7 +300,6 @@ class StartAnalysisView(QWidget):
         self.jobs_layout.removeWidget(card)
         card.deleteLater()
         self.job_cards.remove(card)
-        self._check_critical_params()
 
     def _cancel_card(self, card: FileJobCard):
         """Cancel the currently running job"""
@@ -359,8 +309,6 @@ class StartAnalysisView(QWidget):
 
     # Analysis queue
     def start_analysis(self):
-        e = int(self.electrodes_input.text().strip())
-        f = int(self.frequency_input.text().strip())
 
         self._queue = [c for c in self.job_cards if c.status_badge.text() == "Queued"]
 
@@ -368,11 +316,11 @@ class StartAnalysisView(QWidget):
             return
 
         self.start_btn.setEnabled(False)
-        self._run_next(e, f)
+        self._run_next()
 
-    def _run_next(self, electrodes: int, frequency: int):
+    def _run_next(self):
         if not self._queue:
-            self._check_critical_params()
+            self.start_btn.setEnabled(True)
             return
 
         card = self._queue.pop(0)
@@ -383,8 +331,6 @@ class StartAnalysisView(QWidget):
 
         worker = AnalysisWorker(
             filepath=card.filepath,
-            sampling_rate=frequency,
-            electrode_amnt=electrodes,
             parameters=params,
         )
         thread = QThread(self)
@@ -400,8 +346,8 @@ class StartAnalysisView(QWidget):
             )
         )
         worker.finished.connect(
-            lambda success, output_path, c=card, e=electrodes, f=frequency: (
-                self._store_and_finish(c, success, output_path, e, f)
+            lambda success, output_path, c=card: self._store_and_finish(
+                c, success, output_path
             )
         )
 
@@ -414,13 +360,11 @@ class StartAnalysisView(QWidget):
         self._active_thread = thread
         thread.start()
 
-    def _store_and_finish(self, card, success, output_path, electrodes, frequency):
+    def _store_and_finish(self, card, success, output_path):
         card._output_folder = output_path
-        self._on_job_finished(card, success, electrodes, frequency)
+        self._on_job_finished(card, success)
 
-    def _on_job_finished(
-        self, card: FileJobCard, success: bool, electrodes: int, frequency: int
-    ):
+    def _on_job_finished(self, card: FileJobCard, success: bool):
         if success:
             card.set_complete()
             output_folder = getattr(card, "_output_folder", None)
@@ -434,7 +378,7 @@ class StartAnalysisView(QWidget):
         self._active_card = None
         self._active_worker = None
         self._active_thread = None
-        self._run_next(electrodes, frequency)
+        self._run_next()
 
     def _open_results(self, folder: str, rawfile: str):
         main_window = self.window()
@@ -453,7 +397,7 @@ class StartAnalysisView(QWidget):
                 card.deleteLater()
                 self.job_cards.remove(card)
 
-        self._check_critical_params()
+        self.start_btn.setEnabled(True)
 
 
 # Utilities

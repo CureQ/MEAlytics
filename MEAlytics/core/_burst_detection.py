@@ -14,7 +14,9 @@ from MEAlytics.GUI._theme import (
 )
 
 
-def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata=True):
+def burst_detection(
+    data, electrode, well, parameters, plot_electrodes=False, savedata=True
+):
     """
     Detect bursts in single electrode MEA-data
 
@@ -23,7 +25,9 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
     data : list, np.ndarray
         Raw data from the corresponding electrode, used for visualization purposes.
     electrode : int
-        The electrode used for burst detection.
+        Electrode number.
+    well : int
+        Well number.
     parameters : dict
         Dictionary containing global paramaters. The function will extract the values needed.
     plot_electrodes : bool, optional
@@ -44,13 +48,8 @@ def burst_detection(data, electrode, parameters, plot_electrodes=False, savedata
 
     """
 
-    electrode_number = electrode
     fig = None
     fig2 = None
-
-    # Calculate the well and electrode values to load in the spikedata
-    well = round(electrode_number / parameters["electrode amount"] + 0.505)
-    electrode = electrode_number % parameters["electrode amount"] + 1
 
     # Retrieve spike data from hdf5 files
     output_hdf_file = parameters["output hdf file"]
