@@ -78,8 +78,8 @@ Default value: 1
 
 ### Network burst detection
 #### Min channels
-The minimal amount of channels that should be participating in a network burst to consider it as one. Value should be given as a percentage.<br>
-Default value: 0.5
+The minimal amount of channels that should be participating in a network burst to consider it as one. Value should be given as a fraction.<br>
+Default value: 0.25
 
 #### Thresholding method
 The method used to automatically calculate the threshold used for determining high-activity periods.<br>

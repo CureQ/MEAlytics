@@ -1,14 +1,19 @@
-The graphical user interface is the simplest way to communicate with the library. The GUI can be launched in multiple ways:
+The graphical user interface is the simplest way to communicate with the library. If you have installed MEAlytics using Python, the GUI can be launched in multiple ways:
 
 ## Launch from command prompt
 Firstly, the GUI can be launched from the command prompt. Simply open the command prompt, and enter “mealytics”.
 
 ```console
 C:\Users>mealytics
-Successfully launched MEAlytics GUI
 ```
 
-The output should look like this, and the GUI should appear on your screen.
+or
+
+```console
+C:\Users>python -m MEAlytics
+```
+
+The GUI should appear on your screen.
 
 <img src="../assets/images/mealytics_homescreen.png" width="429" height="254">
 

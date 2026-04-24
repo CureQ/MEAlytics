@@ -1,6 +1,6 @@
 MEAlytics calculates a large variety of features. Electrode features are first calculated seperately, and then averaged over the well. Below you can find an overview of all the features the package calculates.
 
-It is possible to add your own custom features if you have knowledge of Python programming. Instructions for this can be found in ```_features.py``` in the package files.
+It is possible to add your own custom features if you have knowledge of Python programming. Instructions for this can be found in ```MEAlytics/core/_features.py``` in the package files.
 
 Have a specific feature in mind that has not been added yet, and might benefit others? Please do not hesitate to contact us.
 

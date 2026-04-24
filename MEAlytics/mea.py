@@ -60,7 +60,7 @@ def get_default_parameters():
         "default interval threshold": 100,
         "max interval threshold": 1000,
         "burst detection kde bandwidth": 1,
-        "min channels": 0.5,
+        "min channels": 0.25,
         "thresholding method": "Yen",
         "nbd kde bandwidth": 0.05,
         "remove inactive electrodes": True,

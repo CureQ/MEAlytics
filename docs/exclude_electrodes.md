@@ -1,8 +1,6 @@
 By default MEAlytics averages out single-channel features, such as the amount of spikes, over all electrodes in a well to calculate this feature for a specific well. However, some electrodes might show either very low or very high activity, pulling the well average up/down. MEAlytics includes the option to recalculate the well features, while excluding certain electrodes from the analysis.
 
-First, press **Exclude Electrodes** in the main window. You will be presented with the following window:
-
-<img src="../assets/images/exclude_electrodes_main_window.png" width="50%" height="50%">
+Navigate to **Utilities** and press **Open Exclude Electrodes**.
 
 This module allows for batch processing. To process multiple experiments, select the parent folder containing the generated outputfolders. The algorithm will recursively look through the subfolders and scan for files ending with "Features.csv".
 When selecting multiple experiments, the plate layout (well and electrode number) should be the same for all files.
@@ -23,6 +21,6 @@ Here it is possible to select/deselect specific electrodes. It is also possible 
 To apply the current configuration, press **Apply configuration**.
 
 To recalculate the features using the current configuration, press **Recalculate features**
-The algorithm will recalculate the features from the selected experiments. Previous feature files will be replaced. Additionally, the configuration that was used will be saved in the same folder as "excluded_electrodes.npy". This file can be loaded using the electrode configuration window.
+The algorithm will recalculate the features from the selected experiments. Previous feature files will be replaced. Additionally, the configuration that was used will be saved in the same folder as "excluded_electrodes.npy". This file can be loaded in the electrode configuration window.
 
-**Removing electrodes from feature calculations will not remove them from network calculations**
+**Keep in mind that removing electrodes from feature calculations will not remove them from network calculations**

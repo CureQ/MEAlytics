@@ -165,7 +165,7 @@ def electrode_features(well, parameters):
             median_ISI.append(float("NaN"))
             ratio_median_over_mean.append(float("NaN"))
         else:
-            spikeintervals = spikedata[1:-1, 0] - spikedata[0:-2, 0]
+            spikeintervals = np.diff(spikedata[:, 0])
             mean_ISI_electrode = np.mean(spikeintervals)
             mean_ISI.append(mean_ISI_electrode)
 
@@ -744,7 +744,7 @@ def well_features(well, parameters):
             # First sort the spike so they are on chronological order again
             nb_spikes = np.sort(nb_spikes)
             # Calculate the intervals
-            nb_spikes_intervals = nb_spikes[1:-1] - nb_spikes[0:-2]
+            nb_spikes_intervals = np.diff(nb_spikes)
             # Take the average
             single_nb_ISI.append(np.mean(nb_spikes_intervals))
 
@@ -753,7 +753,7 @@ def well_features(well, parameters):
         # Calculate averages from all network bursts
         NB_firingrate.append(np.mean(single_nb_firingrate))
         NB_ISI.append(np.mean(single_nb_ISI))
-        mean_spikes_per_network_burst = np.mean(spikes_per_network_burst)
+        mean_spikes_per_network_burst.append(np.mean(spikes_per_network_burst))
 
         """Calculate the portion of spikes that participate in network bursts"""
         total_spikes = 0

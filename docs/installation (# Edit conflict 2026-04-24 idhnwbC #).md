@@ -6,15 +6,15 @@ For the installer, the package is bundled into an executable using PyInstaller, 
 
 # Installing Python
 A Python interpreter is required to run MEAlytics, the interpreter using the official python installer. All python versions can be found on [https://www.python.org/downloads/](https://www.python.org/downloads/). MEAlytics has been developed and tested on python 3.13, but will most likely also work on other python 3.8+ versions.<br>
-There are plenty of guide available for this process online, to check if your installation was succesful, you can run:
+There are plenty of guide available for this process online, to check if your installation was successful, you can run:
 ```console
 C:\>python --version
-Python 3.14.0
+Python 3.13.0
 
 C:\>pip --version
 pip 23.3.1
 ```
-If both outputs look like this (it can be different versions) both python and pip have been successfully installed and are recognized by the system.<br>
+If both outputs look like this (it can be different versions) both python and pip have been successfully installed and are recognised by the system.<br>
 <br>
 
 ## Installing MEAlytics
@@ -39,7 +39,7 @@ MEAlytics - Version: 0.1.0
 
 The most recent available version of the library can be found on the [pypi page](https://pypi.org/project/MEAlytics/). The library can be upgraded using the command:
 ```console
-pip install MEAlytics –upgrade
+pip install mealytics –upgrade
 ```
 This will upgrade the library to the newest available version.
 

@@ -146,7 +146,9 @@ class PlottingWindow(QMainWindow):
         fot.addWidget(make_label("Features Over Time", "SectionLabel"))
         fot.addWidget(make_divider())
 
-        fot.addWidget(QLabel("DIV Prefix:"))
+        prefix_label = QLabel("DIV Prefix:")
+        prefix_label.setStyleSheet("background: transparent")
+        fot.addWidget(prefix_label)
         self._prefix_entry = QLineEdit()
         self._prefix_entry.setPlaceholderText("e.g.  DIV")
         fot.addWidget(self._prefix_entry)

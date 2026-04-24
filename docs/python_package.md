@@ -2,21 +2,15 @@ Besides the GUI, the MEA analysis tool can also be called as a python library, a
 
 ### Analysing MEA file
 
-Firstly, import the necessary functions:
+Firstly, import the necessary functions and assign a variable that points to your raw data file:
 
 ```python
 from MEAlytics.mea import analyse_wells, get_default_parameters
-```
 
-Next, we define some variables that we later need to pass to the function.
-
-```python
 fileadress='C:/mea_data/mea_experiment.h5'
-sampling_rate=20000
-electrode_amount=12
 ```
 
-Then, we retrieve the dictionary containing the default parameters so we can alter the analysis. In this case we turn on multiprocessing to speed up the analysis.
+Next, we retrieve the dictionary containing the default parameters so we can alter the analysis. In this case we turn on multiprocessing to speed up the analysis.
 
 ```python
 parameters = get_default_parameters()
@@ -27,12 +21,7 @@ Finally, pass all the arguments to the analyse_wells function to initiate the an
 
 ```python
 if __name__ == '__main__':
-    analyse_wells(
-        fileadress=fileadress,
-        sampling_rate=sampling_rate,
-        electrode_amnt=electrode_amount,
-        parameters=parameters
-    )
+    analyse_wells(fileadress=fileadress, parameters=parameters)
 ```
 
 In the end, it should look like this:
@@ -41,16 +30,10 @@ In the end, it should look like this:
 from MEAlytics.mea import analyse_wells, get_default_parameters
 
 fileadress='C:/mea_data/mea_experiment.h5'
-sampling_rate=20000
-electrode_amount=12
 
 parameters = get_default_parameters()
 parameters['use multiprocessing'] = True
 
 if __name__ == '__main__':
-    analyse_wells(fileadress=fileadress,
-                  sampling_rate=sampling_rate,
-                  electrode_amnt=electrode_amount,
-                  parameters=parameters
-                  )
+    analyse_wells(fileadress=fileadress, parameters=parameters)
 ```

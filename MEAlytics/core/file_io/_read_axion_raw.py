@@ -65,6 +65,12 @@ class AxionFile:
             else 0
         )
 
+        self.num_elec_rows = (
+            max(ch["elec_row"] for ch in self.channel_array)
+            if self.channel_array
+            else 0
+        )
+
         self._channel_lookup = {
             (ch["well_col"], ch["well_row"], ch["elec_col"], ch["elec_row"]): idx
             for idx, ch in enumerate(self.channel_array)
@@ -220,14 +226,20 @@ class AxionFile:
         NOTE: This function uses 1-based indexing
         """
         well_idx_0 = well_index - 1
+
+        # Wells map top left to bottom right
         well_row = (well_idx_0 // self.num_well_cols) + 1
         well_col = (well_idx_0 % self.num_well_cols) + 1
 
         if electrode_index is None:
             indices = []
             for e_idx in range(self.num_electrodes):
-                elec_row = (e_idx // self.num_elec_cols) + 1
+                # Electrode columns are left to right
                 elec_col = (e_idx % self.num_elec_cols) + 1
+
+                # Electrode rows are bottom to top - matching the AxIS Navigator GUI
+                gui_row_0 = e_idx // self.num_elec_cols
+                elec_row = self.num_elec_rows - gui_row_0
 
                 idx = self._channel_lookup.get((well_col, well_row, elec_col, elec_row))
                 if idx is None:
@@ -240,8 +252,10 @@ class AxionFile:
 
         else:
             e_idx_0 = electrode_index - 1
-            elec_row = (e_idx_0 // self.num_elec_cols) + 1
             elec_col = (e_idx_0 % self.num_elec_cols) + 1
+
+            gui_row_0 = e_idx_0 // self.num_elec_cols
+            elec_row = self.num_elec_rows - gui_row_0
 
             idx = self._channel_lookup.get((well_col, well_row, elec_col, elec_row))
             if idx is None:

@@ -44,8 +44,7 @@ nav:
     - Graphical user interface: gui.md
     - MEAlytics as Python package: python_package.md
   - Analysis:
-    - Analyse file: analyse_file.md
-    - Batch processing: batch_processing.md
+    - Process Files: process_files.md
     - Output: output.md
     - Features: features.md
     - Parameters: parameters.md
@@ -54,7 +53,6 @@ nav:
     - Compare groups: compare_groups.md
     - Heatmap: heatmap.md
   - Other:
-    - Processing Axion files: axion.md
     - Compressing/rechunking files: compress_rechunk.md
     - Exclude electrodes: exclude_electrodes.md
     - Supported plates: supported_plates.md

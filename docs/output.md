@@ -12,6 +12,6 @@ The file ending with **Electrode_Features.csv** will contain the single electrod
 
 For more information about the features the MEA analysis tool calculates, see [Features Output](features.md).
 
-Lastly, the **parameters.json** file contains information about the analysis such as which parameters were used, some information about the dataset, and which version of the tool was used. This file can be used to copy settings from a previous analysis. For more information on how to do this, see [Analyse Single File](analyse_file.md)
+Lastly, the **parameters.json** file contains information about the analysis such as which parameters were used, some information about the dataset, and which version of the tool was used. This file can be used to copy settings from a previous analysis.
 
 #### It is recommended to not alter or relocate any of these files, as certain functionality of the package, such as plotting, excluding electrodes and inspecting results rely on the naming and location of these files.
