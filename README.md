@@ -31,19 +31,15 @@ MEAlytics' functions can be called from a regular Python script, this might be u
 from MEAlytics.mea import analyse_wells, get_default_parameters
 
 fileadress='/path/to/your/experiment.h5'
-sampling_rate=20000
-electrode_amount=12
 
-# Get and edit parameters
 parameters = get_default_parameters()
 parameters['use multiprocessing'] = True
 
 if __name__ == '__main__':
-    analyse_wells(fileadress=fileadress,
-                  sampling_rate=sampling_rate,
-                  electrode_amnt=electrode_amount,
-                  parameters=parameters
-                  )
+    analyse_wells(
+        fileadress=fileadress,
+        parameters=parameters
+    )
 ```
 
 ---
@@ -91,7 +87,7 @@ This section showcases the basic functionality of MEAlytics, for more informatio
 
 ### File Analysis
 MEAlytics allows for easy batch processing of files.<br>
-Optionally, MEAlytics optionally utilizes **multiprocessing** to significantly speed up the analysis when resources are available!
+MEAlytics utilizes **multiprocessing** to significantly speed up the analysis when resources are available!
 
 ![](./Example_visualisations/process.png)
 
@@ -142,7 +138,3 @@ Visualise the development of features over time by simply adding a prefix to you
 Lastly, MEAlytics offers a wide range of parameters that can be used to alter the analysis! However, all parameters have default values that are backed by literature.
 
 ![Parameters](./Example_visualisations/parameters.png)
-
-<!--
-**CureQ/CureQ** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
--->
