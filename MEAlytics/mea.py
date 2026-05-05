@@ -65,7 +65,7 @@ def get_default_parameters():
         "nbd kde bandwidth": 0.05,
         "remove inactive electrodes": True,
         "activity threshold": 0.1,
-        "use multiprocessing": False,
+        "use multiprocessing": True,
         "synchronicity method": "SPIKE-distance",
     }
 
